@@ -13,7 +13,7 @@ local CARD     = Color3.fromRGB(10,10,20)
 local OFF_CLR  = Color3.fromRGB(20,20,30)
 
 -- ============================================================
--- ALL VARIABLES DECLARED FIRST (fixes stealSpeed crash)
+-- ALL VARIABLES DECLARED FIRST
 -- ============================================================
 local NORMAL_SPEED = 59
 local STEAL_SPEED  = 29
@@ -33,7 +33,7 @@ local unwalkConn            = nil
 local batAimbotEnabled      = false
 local BAT_ENGAGE_RANGE      = 1
 local AIMBOT_SPEED          = 60
-local MELEE_OFFSET          = 3
+local MELEE_OFFSET          = 1.3
 local aimbotConnection      = nil
 local lockedTarget          = nil
 local galaxyEnabled         = false
@@ -84,11 +84,12 @@ local tpStateConn, tpChildConn, tpChildRemConn = nil, nil, nil
 local tpMedusaActive        = false
 local RagdollTPEnabled      = false
 local KeybindButtons        = {}
+local MainFrame             = nil
 
 local POS_L1 = Vector3.new(-476.48,-6.28,92.73)
-local POS_L2 = Vector3.new(-483.12,-4.95,94.80)
+local POS_L2 = Vector3.new(-483.12,-4.95,96.80)
 local POS_R1 = Vector3.new(-476.16,-6.52,25.62)
-local POS_R2 = Vector3.new(-483.04,-5.09,23.14)
+local POS_R2 = Vector3.new(-483.06,-5.11,23.48)
 
 local TP_PRE_STEP = Vector3.new(-452.5,-6.6,57.7)
 local TP_STEPS = {
@@ -138,7 +139,6 @@ local function saveConfig()
             STEAL_DURATION   = STEAL_DURATION,
             GALAXY_GRAVITY   = GALAXY_GRAVITY,
             GALAXY_HOP       = GALAXY_HOP,
-            AIMBOT_SPEED     = AIMBOT_SPEED,
             BAT_ENGAGE_RANGE = BAT_ENGAGE_RANGE,
             fovValue         = fovValue,
         }
@@ -150,10 +150,12 @@ local function saveConfig()
         for k, v in pairs(Keybinds) do
             data["KEY_" .. k] = v.Name
         end
-        data["MAIN_X"]  = MainFrame.Position.X.Offset
-        data["MAIN_Y"]  = MainFrame.Position.Y.Offset
-        data["MAIN_XS"] = MainFrame.Position.X.Scale
-        data["MAIN_YS"] = MainFrame.Position.Y.Scale
+        if MainFrame then
+            data["MAIN_X"]  = MainFrame.Position.X.Offset
+            data["MAIN_Y"]  = MainFrame.Position.Y.Offset
+            data["MAIN_XS"] = MainFrame.Position.X.Scale
+            data["MAIN_YS"] = MainFrame.Position.Y.Scale
+        end
         for i, btn in ipairs(mobileButtons) do
             data["MOB_BTN_X_"  .. i] = btn.Position.X.Offset
             data["MOB_BTN_Y_"  .. i] = btn.Position.Y.Offset
@@ -178,7 +180,6 @@ local function loadConfig()
         if data.GALAXY_GRAVITY   then GALAXY_GRAVITY   = data.GALAXY_GRAVITY   end
         if data.GALAXY_HOP       then GALAXY_HOP       = data.GALAXY_HOP       end
         if data.fovValue         then fovValue         = data.fovValue         end
-        if data.AIMBOT_SPEED     then AIMBOT_SPEED     = data.AIMBOT_SPEED     end
         if data.BAT_ENGAGE_RANGE then BAT_ENGAGE_RANGE = data.BAT_ENGAGE_RANGE end
         for k in pairs(Keybinds) do
             if data["KEY_" .. k] then
@@ -214,10 +215,10 @@ local function doTPDown()
     local result = workspace:Raycast(hrp.Position, Vector3.new(0,-1000,0), params)
     if result then
         local y = result.Position.Y + hum.HipHeight + (hrp.Size.Y / 2)
-        hrp.CFrame = CFrame.new(hrp.Position.X, y + 0.2, hrp.Position.Z)
+        hrp.CFrame = CFrame.new(hrp.Position.X, y + 0.05, hrp.Position.Z)
             * CFrame.Angles(0, math.rad(hrp.Orientation.Y), 0)
     else
-        hrp.AssemblyLinearVelocity = Vector3.new(0,-30,0)
+        hrp.AssemblyLinearVelocity = Vector3.new(0,-80,0)
     end
 end
 
@@ -229,7 +230,15 @@ UserInputService.JumpRequest:Connect(function()
     local h = getHRP() if not h then return end
     h.AssemblyLinearVelocity = Vector3.new(h.AssemblyLinearVelocity.X, INF_JUMP_FORCE, h.AssemblyLinearVelocity.Z)
 end)
+
 RunService.Heartbeat:Connect(function()
+    if not infJumpEnabled or not spaceHeld then return end
+    local h = getHRP() if not h then return end
+    if h.AssemblyLinearVelocity.Y < INF_JUMP_FORCE then
+    h.AssemblyLinearVelocity = Vector3.new(h.AssemblyLinearVelocity.X, INF_JUMP_FORCE, h.AssemblyLinearVelocity.Z)
+     end
+   end)
+ RunService.Heartbeat:Connect(function()
     if not infJumpEnabled then return end
     local h = getHRP() if not h then return end
     if h.AssemblyLinearVelocity.Y < -CLAMP_FALL then
@@ -326,10 +335,14 @@ end
 -- ============================================================
 -- SPEED BILLBOARD
 -- ============================================================
+local BLACK = Color3.fromRGB(0, 0, 0)
+local BLUE  = Color3.fromRGB(0, 170, 255)
+
 local function makeSpeedBB()
     local c    = player.Character if not c then return end
     local head = c:FindFirstChild("Head") if not head then return end
     if speedBB then pcall(function() speedBB:Destroy() end) end
+
     speedBB = Instance.new("BillboardGui")
     speedBB.Name          = "CyberSpeedBB"
     speedBB.Adornee       = head
@@ -337,18 +350,20 @@ local function makeSpeedBB()
     speedBB.StudsOffset   = Vector3.new(0,3.2,0)
     speedBB.AlwaysOnTop   = true
     speedBB.Parent        = head
+
     local lbl             = Instance.new("TextLabel")
     lbl.Name              = "SpeedLbl"
     lbl.Size              = UDim2.new(1,0,1,0)
     lbl.BackgroundTransparency = 1
-    lbl.TextColor3        = WHITE
-    lbl.TextStrokeColor3  = ACCENT
+    lbl.TextColor3        = BLACK        -- black text
+    lbl.TextStrokeColor3  = BLUE         -- blue outline
     lbl.TextStrokeTransparency = 0.3
     lbl.Font              = Enum.Font.GothamBold
     lbl.TextScaled        = true
     lbl.Text              = "Speed: 0"
     lbl.Parent            = speedBB
 end
+
 RunService.RenderStepped:Connect(function()
     if not speedBB or not speedBB.Parent then return end
     local h   = getHRP() if not h then return end
@@ -575,9 +590,9 @@ local function createESP(plr)
     local c    = plr.Character
     local root = c:FindFirstChild("HumanoidRootPart") if not root then return end
     local head = c:FindFirstChild("Head")             if not head then return end
-    if c:FindFirstChild("EclipseESP") then return end
+    if c:FindFirstChild("CyberESP") then return end
     local box       = Instance.new("BoxHandleAdornment")
-    box.Name        = "EclipseESP"
+    box.Name        = "CyberESP"
     box.Adornee     = root
     box.Size        = Vector3.new(4,6,2)
     box.Color3      = ACCENT
@@ -586,7 +601,7 @@ local function createESP(plr)
     box.AlwaysOnTop = true
     box.Parent      = c
     local bb        = Instance.new("BillboardGui")
-    bb.Name         = "EclipseESP_Name"
+    bb.Name         = "CyberESP_Name"
     bb.Adornee      = head
     bb.Size         = UDim2.new(0,200,0,45)
     bb.StudsOffset  = Vector3.new(0,3,0)
@@ -730,7 +745,7 @@ local function doHop()
 end
 
 -- ============================================================
--- UPGRADED TARGET TRACKER
+-- TARGET (simple closest player, no tracker)
 -- ============================================================
 local function isTargetValid(targetChar)
     if not targetChar then return false end
@@ -741,36 +756,25 @@ local function isTargetValid(targetChar)
 end
 
 local function getBestTarget(myHRP)
-    if lockedTarget and not isTargetValid(lockedTarget) then lockedTarget = nil end
-    if lockedTarget and isTargetValid(lockedTarget) then
-        return lockedTarget:FindFirstChild("HumanoidRootPart"), lockedTarget
-    end
-    local bestScore   = math.huge
-    local newTargetChar, newTargetHRP
+    local bestDist = math.huge
+    local bestHRP, bestChar = nil, nil
     for _, targetPlayer in ipairs(Players:GetPlayers()) do
         if targetPlayer ~= player and isTargetValid(targetPlayer.Character) then
             local targetHRP = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
-            local hum       = targetPlayer.Character:FindFirstChildOfClass("Humanoid")
-            local distance  = (targetHRP.Position - myHRP.Position).Magnitude
-            local healthRatio = hum and (hum.Health / math.max(hum.MaxHealth, 1)) or 1
-            local score = distance * (0.7 + healthRatio * 0.3)
-            local toTarget = (targetHRP.Position - camera.CFrame.Position).Unit
-            local camLook  = camera.CFrame.LookVector
-            local dot      = toTarget:Dot(camLook)
-            if dot > 0.5 then score = score * 0.85 end
-            if score < bestScore then
-                bestScore     = score
-                newTargetHRP  = targetHRP
-                newTargetChar = targetPlayer.Character
+            local dist = (targetHRP.Position - myHRP.Position).Magnitude
+            if dist < bestDist then
+                bestDist = dist
+                bestHRP  = targetHRP
+                bestChar = targetPlayer.Character
             end
         end
     end
-    lockedTarget = newTargetChar
-    return newTargetHRP, newTargetChar
+    lockedTarget = bestChar
+    return bestHRP, bestChar
 end
 
 -- ============================================================
--- UPGRADED BAT AIMBOT
+-- BAT AIMBOT (fixed, no tracker)
 -- ============================================================
 local function startBatAimbot()
     if aimbotConnection then return end
@@ -779,84 +783,70 @@ local function startBatAimbot()
     local hum = c:FindFirstChildOfClass("Humanoid")
     if not h or not hum then return end
     hum.AutoRotate = false
+
     local attachment = h:FindFirstChild("AimbotAttachment") or Instance.new("Attachment", h)
     attachment.Name  = "AimbotAttachment"
     local align      = h:FindFirstChild("AimbotAlign") or Instance.new("AlignOrientation", h)
-    align.Name        = "AimbotAlign"
-    align.Mode        = Enum.OrientationAlignmentMode.OneAttachment
-    align.Attachment0 = attachment
-    align.MaxTorque   = math.huge
-    align.Responsiveness = 200
-    batAimbotEnabled  = true
+    align.Name           = "AimbotAlign"
+    align.Mode           = Enum.OrientationAlignmentMode.OneAttachment
+    align.Attachment0    = attachment
+    align.MaxTorque      = math.huge
+    align.Responsiveness = 250
 
-    local smoothedTargetVel = Vector3.zero
-    local smoothedTargetPos = Vector3.zero
-    local firstLock         = true
+    batAimbotEnabled = true
 
     aimbotConnection = RunService.Heartbeat:Connect(function(dt)
         if not batAimbotEnabled then return end
-        if not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then return end
-        local currentHRP = player.Character.HumanoidRootPart
-        local targetHRP, targetChar = getBestTarget(currentHRP)
+        local myChar = player.Character if not myChar then return end
+        local myHRP  = myChar:FindFirstChild("HumanoidRootPart") if not myHRP then return end
+
+        local targetHRP, targetChar = getBestTarget(myHRP)
+
         if targetHRP and targetChar then
             aimbotHighlight.Adornee = targetChar
-            local rawVel = targetHRP.AssemblyLinearVelocity
-            local rawPos = targetHRP.Position
-            if firstLock then
-                smoothedTargetVel = rawVel
-                smoothedTargetPos = rawPos
-                firstLock = false
+
+            local dir  = targetHRP.Position - myHRP.Position
+            local dist = dir.Magnitude
+
+            if dist > 0.1 then
+                align.CFrame = CFrame.lookAt(myHRP.Position, targetHRP.Position)
             end
-            local velDelta = (rawVel - smoothedTargetVel).Magnitude
-            local posAlpha = math.clamp(dt * (12 + velDelta * 0.4), 0, 1)
-            local velAlpha = math.clamp(dt * (16 + velDelta * 0.3), 0, 1)
-            smoothedTargetPos = smoothedTargetPos:Lerp(rawPos,  posAlpha)
-            smoothedTargetVel = smoothedTargetVel:Lerp(rawVel,  velAlpha)
-            local dist = (smoothedTargetPos - currentHRP.Position).Magnitude
-            local predTime = math.clamp((dist / math.max(AIMBOT_SPEED, 1)) * 0.6, 0.03, 0.28)
-            local accel = rawVel - smoothedTargetVel
-            local predictedPos = smoothedTargetPos
-                + (smoothedTargetVel * predTime)
-                + (accel * predTime * predTime * 0.5)
-            local dirToTarget = predictedPos - currentHRP.Position
-            local dist3D      = dirToTarget.Magnitude
-            local targetStandPos = dist3D > MELEE_OFFSET
-                and (predictedPos - dirToTarget.Unit * MELEE_OFFSET)
-                or predictedPos
-            local speedScale = math.clamp(dist3D / (MELEE_OFFSET * 4), 0.18, 1)
-            local finalSpeed = AIMBOT_SPEED * speedScale
-            align.CFrame = CFrame.lookAt(currentHRP.Position, predictedPos)
-            local moveDir  = targetStandPos - currentHRP.Position
-            local moveDist = moveDir.Magnitude
-            if moveDist > 0.25 then
-                local flatMove = Vector3.new(moveDir.X, 0, moveDir.Z)
-                local vertDiff = targetStandPos.Y - currentHRP.Position.Y
-                if flatMove.Magnitude > 0 then
-                    local newVertVel = currentHRP.AssemblyLinearVelocity.Y
-                    if vertDiff > 1.5 then
-                        newVertVel = math.clamp(vertDiff * 7, 22, INF_JUMP_FORCE * 1.3)
-                    elseif vertDiff < -2 then
-                        newVertVel = math.clamp(vertDiff * 2, -CLAMP_FALL, -5)
-                    end
-                    currentHRP.AssemblyLinearVelocity = Vector3.new(
-                        flatMove.Unit.X * finalSpeed,
+
+            local flat       = Vector3.new(dir.X, 0, dir.Z)
+            local vertDiff   = targetHRP.Position.Y - myHRP.Position.Y
+            local curVertVel = myHRP.AssemblyLinearVelocity.Y
+            local newVertVel = curVertVel
+
+            if vertDiff > 2.0 then
+                newVertVel = math.clamp(vertDiff * 8, 25, INF_JUMP_FORCE * 1.35)
+            elseif vertDiff < -2.5 then
+                newVertVel = math.clamp(vertDiff * 1.8, -CLAMP_FALL, -4)
+            end
+
+            if dist > MELEE_OFFSET then
+                if flat.Magnitude > 0.01 then
+                    myHRP.AssemblyLinearVelocity = Vector3.new(
+                        flat.Unit.X * 60,
                         newVertVel,
-                        flatMove.Unit.Z * finalSpeed)
+                        flat.Unit.Z * 60)
                 end
             else
-                currentHRP.AssemblyLinearVelocity = Vector3.new(
-                    0, currentHRP.AssemblyLinearVelocity.Y, 0)
+                myHRP.AssemblyLinearVelocity = Vector3.new(
+                    myHRP.AssemblyLinearVelocity.X * 0.2,
+                    curVertVel,
+                    myHRP.AssemblyLinearVelocity.Z * 0.2)
             end
         else
-            lockedTarget         = nil
-            firstLock            = true
-            smoothedTargetVel    = Vector3.zero
-            smoothedTargetPos    = Vector3.zero
-            currentHRP.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
             aimbotHighlight.Adornee = nil
+            lockedTarget = nil
+            myHRP.AssemblyLinearVelocity = Vector3.new(
+                myHRP.AssemblyLinearVelocity.X * 0.2,
+                myHRP.AssemblyLinearVelocity.Y,
+                myHRP.AssemblyLinearVelocity.Z * 0.2)
         end
     end)
 end
+
 local function stopBatAimbot()
     batAimbotEnabled = false
     if aimbotConnection then aimbotConnection:Disconnect() aimbotConnection = nil end
@@ -1089,7 +1079,7 @@ if player.Character then setupChar(player.Character) end
 player.CharacterAdded:Connect(function(c) task.wait(0.5) setupChar(c) end)
 
 -- ============================================================
--- GUI — COMPACT CP-FRIENDLY VERSION
+-- GUI
 -- ============================================================
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name            = "CYBER HUB"
@@ -1098,8 +1088,7 @@ ScreenGui.ZIndexBehavior  = Enum.ZIndexBehavior.Sibling
 ScreenGui.IgnoreGuiInset  = false
 ScreenGui.Parent          = player:WaitForChild("PlayerGui")
 
--- Compact size: 220 x 400 instead of 340 x 560
-local MainFrame = Instance.new("Frame")
+MainFrame = Instance.new("Frame")
 MainFrame.Name             = "MainFrame"
 MainFrame.Size             = UDim2.new(0, 220, 0, 400)
 MainFrame.Position         = UDim2.new(0.5, -110, 0.5, -200)
@@ -1115,7 +1104,6 @@ MainStroke.Thickness        = 1.5
 MainStroke.Color            = ACCENT
 MainStroke.ApplyStrokeMode  = Enum.ApplyStrokeMode.Border
 
--- Drag support
 do
     local dragging, dragStart, startPos
     MainFrame.InputBegan:Connect(function(input)
@@ -1140,7 +1128,6 @@ do
     end)
 end
 
--- Title bar — slimmer at 38px
 local TitleBar = Instance.new("Frame", MainFrame)
 TitleBar.Size             = UDim2.new(1, 0, 0, 38)
 TitleBar.BackgroundColor3 = Color3.fromRGB(10, 8, 18)
@@ -1161,7 +1148,6 @@ TitleLbl.TextColor3              = WHITE
 TitleLbl.TextStrokeColor3        = ACCENT
 TitleLbl.TextStrokeTransparency  = 0.5
 
--- Scale buttons — smaller
 do
     local guiScale = 1.0
     local BASE_W, BASE_H = 220, 400
@@ -1203,7 +1189,6 @@ DiscordLbl.Font                   = Enum.Font.GothamBold
 DiscordLbl.TextSize               = 8
 DiscordLbl.TextColor3             = ACCENT
 
--- Scrolling content frame — tighter margins
 local ScrollFrame = Instance.new("ScrollingFrame", MainFrame)
 ScrollFrame.Size              = UDim2.new(1, -10, 1, -62)
 ScrollFrame.Position          = UDim2.new(0, 5, 0, 40)
@@ -1215,27 +1200,27 @@ ScrollFrame.CanvasSize        = UDim2.new(0, 0, 0, 0)
 ScrollFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
 
 local ListLayout = Instance.new("UIListLayout", ScrollFrame)
-ListLayout.Padding     = UDim.new(0, 3)  -- tighter than original 5
+ListLayout.Padding     = UDim.new(0, 3)
 ListLayout.SortOrder   = Enum.SortOrder.LayoutOrder
 
 -- ============================================================
--- COMPACT GUI HELPERS
+-- GUI HELPERS
 -- ============================================================
 local function makeSection(text, order)
     local lbl = Instance.new("TextLabel", ScrollFrame)
-    lbl.Size                   = UDim2.new(1, 0, 0, 18)  -- was 24
+    lbl.Size                   = UDim2.new(1, 0, 0, 18)
     lbl.BackgroundTransparency = 1
     lbl.Text                   = "  " .. text
     lbl.TextColor3             = ACCENT
     lbl.Font                   = Enum.Font.GothamBold
-    lbl.TextSize               = 8   -- was 10
+    lbl.TextSize               = 8
     lbl.TextXAlignment         = Enum.TextXAlignment.Left
     lbl.LayoutOrder            = order
 end
 
 local function makeToggle(name, order, callback, defaultOn)
     local row = Instance.new("Frame", ScrollFrame)
-    row.Size             = UDim2.new(1, 0, 0, 34)  -- was 42
+    row.Size             = UDim2.new(1, 0, 0, 34)
     row.BackgroundColor3 = CARD
     row.BorderSizePixel  = 0
     row.LayoutOrder      = order
@@ -1248,10 +1233,10 @@ local function makeToggle(name, order, callback, defaultOn)
     lbl.Text                   = name
     lbl.TextColor3             = WHITE
     lbl.Font                   = Enum.Font.GothamBold
-    lbl.TextSize               = 10  -- was 12
+    lbl.TextSize               = 10
     lbl.TextXAlignment         = Enum.TextXAlignment.Left
 
-    local pW, pH, dSz = 36, 18, 13  -- was 44, 22, 16
+    local pW, pH, dSz = 36, 18, 13
     local track = Instance.new("Frame", row)
     track.Size             = UDim2.new(0, pW, 0, pH)
     track.Position         = UDim2.new(1, -(pW+8), 0.5, -pH/2)
@@ -1298,7 +1283,7 @@ end
 
 local function makeNumInput(labelText, defaultVal, order, onChanged)
     local row = Instance.new("Frame", ScrollFrame)
-    row.Size             = UDim2.new(1, 0, 0, 34)  -- was 42
+    row.Size             = UDim2.new(1, 0, 0, 34)
     row.BackgroundColor3 = CARD
     row.BorderSizePixel  = 0
     row.LayoutOrder      = order
@@ -1311,17 +1296,17 @@ local function makeNumInput(labelText, defaultVal, order, onChanged)
     lbl.Text                   = labelText
     lbl.TextColor3             = WHITE
     lbl.Font                   = Enum.Font.GothamBold
-    lbl.TextSize               = 10  -- was 12
+    lbl.TextSize               = 10
     lbl.TextXAlignment         = Enum.TextXAlignment.Left
 
     local box = Instance.new("TextBox", row)
-    box.Size              = UDim2.new(0, 52, 0, 22)  -- was 62 x 26
+    box.Size              = UDim2.new(0, 52, 0, 22)
     box.Position          = UDim2.new(1, -58, 0.5, -11)
     box.BackgroundColor3  = Color3.fromRGB(20, 18, 32)
     box.Text              = tostring(defaultVal)
     box.TextColor3        = ACCENT
     box.Font              = Enum.Font.GothamBold
-    box.TextSize          = 10  -- was 12
+    box.TextSize          = 10
     box.TextXAlignment    = Enum.TextXAlignment.Center
     box.BorderSizePixel   = 0
     box.ClearTextOnFocus  = false
@@ -1336,11 +1321,11 @@ end
 
 local function makeActionBtn(label, order, onClick)
     local btn = Instance.new("TextButton", ScrollFrame)
-    btn.Size             = UDim2.new(1, 0, 0, 30)  -- was 38
+    btn.Size             = UDim2.new(1, 0, 0, 30)
     btn.BackgroundColor3 = Color3.fromRGB(22, 18, 38)
     btn.Text             = label
     btn.Font             = Enum.Font.GothamBlack
-    btn.TextSize         = 10  -- was 12
+    btn.TextSize         = 10
     btn.TextColor3       = ACCENT
     btn.BorderSizePixel  = 0
     btn.LayoutOrder      = order
@@ -1351,7 +1336,7 @@ local function makeActionBtn(label, order, onClick)
 end
 
 -- ============================================================
--- BUILD ALL FEATURES IN ONE PANEL
+-- BUILD ALL FEATURES
 -- ============================================================
 makeSection("COMBAT", 1)
 makeToggle("Bat Aimbot", 2, function(v)
@@ -1410,7 +1395,6 @@ makeSection("SPEEDS", 40)
 makeNumInput("Normal Speed",   NORMAL_SPEED,     41, function(v) NORMAL_SPEED     = v end)
 makeNumInput("Slow Speed",     SLOW_SPEED,       42, function(v) SLOW_SPEED       = v end)
 makeNumInput("FOV",            fovValue,         43, function(v) fovValue          = v applyFOV() end)
-makeNumInput("Aimbot Speed",   AIMBOT_SPEED,     44, function(v) AIMBOT_SPEED     = v end)
 makeNumInput("Engage Range",   BAT_ENGAGE_RANGE, 45, function(v) BAT_ENGAGE_RANGE = v end)
 makeNumInput("Gravity %",      GALAXY_GRAVITY,   46, function(v) GALAXY_GRAVITY   = v end)
 makeNumInput("Hop Power",      GALAXY_HOP,       47, function(v) GALAXY_HOP       = v end)
@@ -1423,14 +1407,13 @@ makeToggle("Taunt Spam", 53, function(v)
     if v then startTaunt() else stopTaunt() end
 end)
 
--- Save config button
 makeSection("CONFIG", 60)
 local saveBtn = Instance.new("TextButton", ScrollFrame)
-saveBtn.Size             = UDim2.new(1, 0, 0, 28)  -- was 36
+saveBtn.Size             = UDim2.new(1, 0, 0, 28)
 saveBtn.BackgroundColor3 = Color3.fromRGB(20, 60, 35)
 saveBtn.Text             = "SAVE CONFIG"
 saveBtn.Font             = Enum.Font.GothamBlack
-saveBtn.TextSize         = 10  -- was 12
+saveBtn.TextSize         = 10
 saveBtn.TextColor3       = WHITE
 saveBtn.BorderSizePixel  = 0
 saveBtn.LayoutOrder      = 61
@@ -1456,17 +1439,16 @@ saveBtn.MouseButton1Click:Connect(function()
     end)
 end)
 
--- Keybinds section
 makeSection("KEYBINDS (click to rebind)", 70)
 local hint = Instance.new("TextLabel", ScrollFrame)
-hint.Size                   = UDim2.new(1, 0, 0, 24)  -- was 30
+hint.Size                   = UDim2.new(1, 0, 0, 24)
 hint.BackgroundColor3       = Color3.fromRGB(20, 12, 35)
 hint.BackgroundTransparency = 0
 hint.BorderSizePixel        = 0
 hint.Text                   = "Click a key then press any key. CTRL = clear."
 hint.TextColor3             = Color3.fromRGB(180, 160, 220)
 hint.Font                   = Enum.Font.Gotham
-hint.TextSize               = 8  -- was 10
+hint.TextSize               = 8
 hint.TextWrapped            = true
 hint.LayoutOrder            = 71
 Instance.new("UICorner", hint).CornerRadius = UDim.new(0, 6)
@@ -1480,7 +1462,7 @@ local bindList = {
 for idx, entry in ipairs(bindList) do
     local displayName, keyName = entry[1], entry[2]
     local row = Instance.new("Frame", ScrollFrame)
-    row.Size             = UDim2.new(1, 0, 0, 34)  -- was 42
+    row.Size             = UDim2.new(1, 0, 0, 34)
     row.BackgroundColor3 = CARD
     row.BorderSizePixel  = 0
     row.LayoutOrder      = 71 + idx
@@ -1492,15 +1474,15 @@ for idx, entry in ipairs(bindList) do
     nameLbl.Text                   = displayName
     nameLbl.TextColor3             = WHITE
     nameLbl.Font                   = Enum.Font.GothamBold
-    nameLbl.TextSize               = 10  -- was 12
+    nameLbl.TextSize               = 10
     nameLbl.TextXAlignment         = Enum.TextXAlignment.Left
     local keyBtn = Instance.new("TextButton", row)
-    keyBtn.Size             = UDim2.new(0, 70, 0, 22)  -- was 84 x 28
+    keyBtn.Size             = UDim2.new(0, 70, 0, 22)
     keyBtn.Position         = UDim2.new(1, -76, 0.5, -11)
     keyBtn.BackgroundColor3 = Color3.fromRGB(30, 20, 50)
     keyBtn.Text             = Keybinds[keyName] and tostring(Keybinds[keyName]):gsub("Enum.KeyCode.","") or "NONE"
     keyBtn.Font             = Enum.Font.GothamBold
-    keyBtn.TextSize         = 8  -- was 10
+    keyBtn.TextSize         = 8
     keyBtn.TextColor3       = ACCENT
     keyBtn.BorderSizePixel  = 0
     Instance.new("UICorner", keyBtn).CornerRadius = UDim.new(0, 6)
@@ -1528,10 +1510,10 @@ for idx, entry in ipairs(bindList) do
 end
 
 -- ============================================================
--- PROGRESS BAR — slightly smaller
+-- PROGRESS BAR
 -- ============================================================
 local PBC = Instance.new("Frame", ScreenGui)
-PBC.Size                   = UDim2.new(0, 200, 0, 38)  -- was 240 x 42
+PBC.Size                   = UDim2.new(0, 200, 0, 38)
 PBC.Position               = UDim2.new(0.5, -100, 1, -90)
 PBC.BackgroundColor3       = Color3.fromRGB(10, 8, 18)
 PBC.BackgroundTransparency = 0.35
@@ -1574,7 +1556,7 @@ ProgressLabel.BackgroundTransparency = 1
 ProgressLabel.Text                   = "CYBER READY"
 ProgressLabel.TextColor3             = WHITE
 ProgressLabel.Font                   = Enum.Font.GothamBold
-ProgressLabel.TextSize               = 9  -- was 10
+ProgressLabel.TextSize               = 9
 ProgressLabel.TextXAlignment         = Enum.TextXAlignment.Left
 ProgressLabel.ZIndex                 = 3
 
@@ -1585,7 +1567,7 @@ ProgressPctLabel.BackgroundTransparency = 1
 ProgressPctLabel.Text                   = ""
 ProgressPctLabel.TextColor3             = ACCENT
 ProgressPctLabel.Font                   = Enum.Font.GothamBlack
-ProgressPctLabel.TextSize               = 10  -- was 11
+ProgressPctLabel.TextSize               = 10
 ProgressPctLabel.TextXAlignment         = Enum.TextXAlignment.Center
 ProgressPctLabel.ZIndex                 = 3
 
@@ -1596,7 +1578,7 @@ rl.BackgroundTransparency = 1
 rl.Text                   = "R:"
 rl.TextColor3             = Color3.fromRGB(180, 180, 200)
 rl.Font                   = Enum.Font.GothamBold
-rl.TextSize               = 8  -- was 9
+rl.TextSize               = 8
 rl.ZIndex                 = 3
 
 RadiusInput = Instance.new("TextBox", PBC)
@@ -1606,7 +1588,7 @@ RadiusInput.BackgroundTransparency = 1
 RadiusInput.Text              = tostring(STEAL_RADIUS)
 RadiusInput.TextColor3        = ACCENT
 RadiusInput.Font              = Enum.Font.GothamBold
-RadiusInput.TextSize          = 8  -- was 9
+RadiusInput.TextSize          = 8
 RadiusInput.ZIndex            = 3
 RadiusInput.BorderSizePixel   = 0
 RadiusInput.ClearTextOnFocus  = false
@@ -1622,7 +1604,7 @@ RadiusInput.FocusLost:Connect(function()
 end)
 
 local pt = Instance.new("Frame", PBC)
-pt.Size                   = UDim2.new(0.9, 0, 0, 6)  -- was 8
+pt.Size                   = UDim2.new(0.9, 0, 0, 6)
 pt.Position               = UDim2.new(0.05, 0, 1, -10)
 pt.BackgroundColor3       = Color3.fromRGB(25, 22, 38)
 pt.BackgroundTransparency = 0.4
@@ -1637,18 +1619,18 @@ ProgressBarFill.BorderSizePixel        = 0
 Instance.new("UICorner", ProgressBarFill).CornerRadius = UDim.new(1, 0)
 
 -- ============================================================
--- MOBILE BUTTONS — 48x48 instead of 56x56
+-- MOBILE BUTTONS
 -- ============================================================
 local function makeMob(label, pos, toggleName, onAct)
     local btn = Instance.new("TextButton", ScreenGui)
-    btn.Size                   = UDim2.new(0, 48, 0, 48)  -- was 56
+    btn.Size                   = UDim2.new(0, 48, 0, 48)
     btn.Position               = pos
     btn.BackgroundColor3       = Color3.fromRGB(5, 5, 10)
     btn.BackgroundTransparency = 0.1
     btn.Text                   = label
     btn.TextColor3             = ACCENT
     btn.Font                   = Enum.Font.GothamBold
-    btn.TextSize               = 7   -- was 8
+    btn.TextSize               = 7
     btn.TextWrapped            = true
     btn.BorderSizePixel        = 0
     btn.ZIndex                 = 20
@@ -1745,7 +1727,7 @@ task.defer(function()
 end)
 
 -- ============================================================
--- OPEN / CLOSE BUTTON — smaller at 44x44
+-- OPEN / CLOSE BUTTON
 -- ============================================================
 do
     local OCGui = Instance.new("ScreenGui", player:WaitForChild("PlayerGui"))
@@ -1753,11 +1735,11 @@ do
     OCGui.ResetOnSpawn = false
 
     local OBtn = Instance.new("TextButton", OCGui)
-    OBtn.Size             = UDim2.new(0, 44, 0, 44)  -- was 56
+    OBtn.Size             = UDim2.new(0, 44, 0, 44)
     OBtn.Position         = UDim2.new(0, 10, 0.5, -22)
     OBtn.BackgroundColor3 = Color3.fromRGB(10, 10, 15)
     OBtn.Text             = "CYBER"
-    OBtn.TextSize         = 8   -- was 9
+    OBtn.TextSize         = 8
     OBtn.Font             = Enum.Font.GothamBold
     OBtn.TextColor3       = Color3.fromRGB(120, 180, 255)
     OBtn.BorderSizePixel  = 0
