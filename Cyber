@@ -17,7 +17,7 @@ local OFF_CLR  = Color3.fromRGB(20,20,30)
 -- ============================================================
 local NORMAL_SPEED = 59
 local STEAL_SPEED  = 29
-local SLOW_SPEED   = 34
+local SLOW_SPEED   = 29
 
 local autoStealEnabled  = false
 local isStealing        = false
@@ -31,21 +31,11 @@ local antiRagdollEnabled    = false
 local unwalkEnabled         = false
 local unwalkConn            = nil
 local batAimbotEnabled      = false
-local BAT_ENGAGE_RANGE      = 1
 local AIMBOT_SPEED          = 60
-local MELEE_OFFSET          = 1.3
+local MELEE_OFFSET          = 2.5
 local aimbotConnection      = nil
 local lockedTarget          = nil
-local galaxyEnabled         = false
 local hopsEnabled           = false
-local galaxyVF              = nil
-local galaxyAtt             = nil
-local DEFAULT_GRAVITY       = 196.2
-local GALAXY_GRAVITY        = 42
-local GALAXY_HOP            = 35
-local HOP_COOLDOWN          = 0.08
-local lastHop               = 0
-local spaceHeld             = false
 local espEnabled            = true
 local espConns              = {}
 local optimizerEnabled      = false
@@ -78,28 +68,14 @@ local spinBAV               = nil
 local SPIN_SPEED            = 0
 local stealSpeedConn        = nil
 local stealSpeedActive      = false
-local tpWasRagdolled        = false
-local tpCooldown            = false
-local tpStateConn, tpChildConn, tpChildRemConn = nil, nil, nil
-local tpMedusaActive        = false
-local RagdollTPEnabled      = false
 local KeybindButtons        = {}
 local MainFrame             = nil
+local uiLocked              = false
 
 local POS_L1 = Vector3.new(-476.48,-6.28,92.73)
 local POS_L2 = Vector3.new(-483.12,-4.95,96.80)
 local POS_R1 = Vector3.new(-476.16,-6.52,25.62)
 local POS_R2 = Vector3.new(-483.06,-5.11,23.48)
-
-local TP_PRE_STEP = Vector3.new(-452.5,-6.6,57.7)
-local TP_STEPS = {
-    Left  = {Vector3.new(-475.0,-6.6,94.7), Vector3.new(-482.6,-4.7,94.6)},
-    Right = {Vector3.new(-475.2,-6.6,23.5), Vector3.new(-482.2,-4.7,23.4)},
-}
-local TP_OUTSIDE_STEPS = {
-    Left  = {Vector3.new(-466.0,-6.6,94.7), Vector3.new(-472.0,-6.6,94.7)},
-    Right = {Vector3.new(-466.0,-6.6,23.5), Vector3.new(-472.0,-6.6,23.5)},
-}
 
 local Keybinds = {
     AutoLeft    = Enum.KeyCode.Q,
@@ -109,14 +85,13 @@ local Keybinds = {
     AntiRagdoll = Enum.KeyCode.X,
     Unwalk      = Enum.KeyCode.N,
     SlowDown    = Enum.KeyCode.F7,
-    RagdollTP   = Enum.KeyCode.F8,
     Drop        = Enum.KeyCode.F3,
     Taunt       = Enum.KeyCode.F4,
     TPDown      = Enum.KeyCode.G,
 }
 
 local aimbotHighlight = Instance.new("Highlight")
-aimbotHighlight.Name              = "EclipseAimbotESP"
+aimbotHighlight.Name              = "CyberAimbotESP"
 aimbotHighlight.FillColor         = Color3.fromRGB(180,0,255)
 aimbotHighlight.OutlineColor      = Color3.fromRGB(255,255,255)
 aimbotHighlight.FillTransparency  = 0.5
@@ -137,9 +112,6 @@ local function saveConfig()
             SLOW_SPEED       = SLOW_SPEED,
             STEAL_RADIUS     = STEAL_RADIUS,
             STEAL_DURATION   = STEAL_DURATION,
-            GALAXY_GRAVITY   = GALAXY_GRAVITY,
-            GALAXY_HOP       = GALAXY_HOP,
-            BAT_ENGAGE_RANGE = BAT_ENGAGE_RANGE,
             fovValue         = fovValue,
         }
         for k, v in pairs(toggleStates) do
@@ -177,10 +149,7 @@ local function loadConfig()
         if data.SLOW_SPEED       then SLOW_SPEED       = data.SLOW_SPEED       end
         if data.STEAL_RADIUS     then STEAL_RADIUS     = data.STEAL_RADIUS     end
         if data.STEAL_DURATION   then STEAL_DURATION   = data.STEAL_DURATION   end
-        if data.GALAXY_GRAVITY   then GALAXY_GRAVITY   = data.GALAXY_GRAVITY   end
-        if data.GALAXY_HOP       then GALAXY_HOP       = data.GALAXY_HOP       end
         if data.fovValue         then fovValue         = data.fovValue         end
-        if data.BAT_ENGAGE_RANGE then BAT_ENGAGE_RANGE = data.BAT_ENGAGE_RANGE end
         for k in pairs(Keybinds) do
             if data["KEY_" .. k] then
                 pcall(function() Keybinds[k] = Enum.KeyCode[data["KEY_" .. k]] end)
@@ -225,24 +194,39 @@ end
 -- ============================================================
 -- INF JUMP
 -- ============================================================
+local JUMP_BLEND  = 0.4
+local FALL_BLEND  = 0.15
+local JUMP_BUFFER = 0.1
+
+local jumpBuffered    = false
+local jumpBufferTimer = 0
+
 UserInputService.JumpRequest:Connect(function()
     if not infJumpEnabled then return end
-    local h = getHRP() if not h then return end
-    h.AssemblyLinearVelocity = Vector3.new(h.AssemblyLinearVelocity.X, INF_JUMP_FORCE, h.AssemblyLinearVelocity.Z)
+    jumpBuffered    = true
+    jumpBufferTimer = JUMP_BUFFER
 end)
 
-RunService.Heartbeat:Connect(function()
-    if not infJumpEnabled or not spaceHeld then return end
-    local h = getHRP() if not h then return end
-    if h.AssemblyLinearVelocity.Y < INF_JUMP_FORCE then
-    h.AssemblyLinearVelocity = Vector3.new(h.AssemblyLinearVelocity.X, INF_JUMP_FORCE, h.AssemblyLinearVelocity.Z)
-     end
-   end)
- RunService.Heartbeat:Connect(function()
+RunService.Heartbeat:Connect(function(dt)
     if not infJumpEnabled then return end
     local h = getHRP() if not h then return end
-    if h.AssemblyLinearVelocity.Y < -CLAMP_FALL then
-        h.AssemblyLinearVelocity = Vector3.new(h.AssemblyLinearVelocity.X, -CLAMP_FALL, h.AssemblyLinearVelocity.Z)
+    local vel = h.AssemblyLinearVelocity
+
+    if jumpBuffered then
+        jumpBufferTimer = jumpBufferTimer - dt
+        if jumpBufferTimer <= 0 then jumpBuffered = false end
+    end
+
+    if jumpBuffered then
+        local targetY = INF_JUMP_FORCE
+        local smoothY = vel.Y + (targetY - vel.Y) * JUMP_BLEND
+        h.AssemblyLinearVelocity = Vector3.new(vel.X, smoothY, vel.Z)
+        if math.abs(smoothY - targetY) < 0.5 then jumpBuffered = false end
+    end
+
+    if vel.Y < -CLAMP_FALL then
+        local clampedY = vel.Y + (-CLAMP_FALL - vel.Y) * FALL_BLEND
+        h.AssemblyLinearVelocity = Vector3.new(vel.X, clampedY, vel.Z)
     end
 end)
 
@@ -355,8 +339,8 @@ local function makeSpeedBB()
     lbl.Name              = "SpeedLbl"
     lbl.Size              = UDim2.new(1,0,1,0)
     lbl.BackgroundTransparency = 1
-    lbl.TextColor3        = BLACK        -- black text
-    lbl.TextStrokeColor3  = BLUE         -- blue outline
+    lbl.TextColor3        = BLACK
+    lbl.TextStrokeColor3  = BLUE
     lbl.TextStrokeTransparency = 0.3
     lbl.Font              = Enum.Font.GothamBold
     lbl.TextScaled        = true
@@ -453,112 +437,6 @@ end
 local function stopAntiRagdoll()
     for _, conn in pairs(AntiRagdollConns) do conn:Disconnect() end
     AntiRagdollConns = {}
-end
-
--- ============================================================
--- RAGDOLL TP
--- ============================================================
-local MEDUSA_TP_NAMES = {
-    Petrified=true, Petrify=true, Stone=true, MedusaStone=true,
-    MedusaEffect=true, Stoned=true, MedusaHead=true, Frozen=true,
-    Statue=true, PetrifyEffect=true,
-}
-local function isMedusaTPChild(name)
-    if MEDUSA_TP_NAMES[name] then return true end
-    local l = name:lower()
-    return l:find("medusa") or l:find("petri") or l:find("stone") or l:find("statue") or l:find("frozen")
-end
-local TP_RAGDOLL_STATES = {
-    [Enum.HumanoidStateType.Physics]     = true,
-    [Enum.HumanoidStateType.FallingDown] = true,
-    [Enum.HumanoidStateType.Ragdoll]     = true,
-}
-local function detectEnemySide()
-    local plots = workspace:FindFirstChild("Plots") if not plots then return "Left" end
-    for _, plot in ipairs(plots:GetChildren()) do
-        local sign = plot:FindFirstChild("PlotSign")
-        if sign then
-            local yb = sign:FindFirstChild("YourBase")
-            if yb and yb:IsA("BillboardGui") and yb.Enabled then
-                local center = plot:FindFirstChildWhichIsA("BasePart")
-                local z = center and center.Position.Z or 0
-                return z > 60 and "Right" or "Left"
-            end
-        end
-    end
-    return "Left"
-end
-local function tpMoveTo(pos)
-    local r = getHRP() if not r then return end
-    r.CFrame = CFrame.new(pos) r.AssemblyLinearVelocity = Vector3.zero
-end
-local function doRagdollTP()
-    if tpCooldown then return end tpCooldown = true
-    local side  = detectEnemySide()
-    local steps = TP_STEPS[side]
-    tpMoveTo(TP_PRE_STEP)
-    task.delay(0.10, function()
-        tpMoveTo(steps[1])
-        task.delay(0.10, function()
-            tpMoveTo(steps[2])
-            task.delay(1.2, function() tpCooldown = false end)
-        end)
-    end)
-end
-local function doMedusaTP()
-    if tpCooldown then return end tpCooldown = true
-    local side  = detectEnemySide()
-    local steps = TP_OUTSIDE_STEPS[side]
-    tpMoveTo(TP_PRE_STEP)
-    task.delay(0.10, function()
-        tpMoveTo(steps[1])
-        task.delay(0.10, function()
-            tpMoveTo(steps[2])
-            task.delay(1.2, function() tpCooldown = false tpMedusaActive = false end)
-        end)
-    end)
-end
-local function hookTPCharacter(char)
-    if tpStateConn   then tpStateConn:Disconnect()   tpStateConn   = nil end
-    if tpChildConn   then tpChildConn:Disconnect()   tpChildConn   = nil end
-    if tpChildRemConn then tpChildRemConn:Disconnect() tpChildRemConn = nil end
-    local hum       = char:WaitForChild("Humanoid")
-    local spawnTime = tick()
-    local function isSpawnGrace() return (tick() - spawnTime) < 2 end
-    tpStateConn = hum.StateChanged:Connect(function(_, newState)
-        if not RagdollTPEnabled then return end
-        if isSpawnGrace() then tpWasRagdolled = false return end
-        if TP_RAGDOLL_STATES[newState] then
-            if not tpWasRagdolled then tpWasRagdolled = true task.defer(doRagdollTP) end
-        else
-            tpWasRagdolled = false
-        end
-    end)
-    tpChildConn = char.ChildAdded:Connect(function(child)
-        if not RagdollTPEnabled then return end
-        if isSpawnGrace() then return end
-        if isMedusaTPChild(child.Name) then
-            if not tpMedusaActive then tpMedusaActive = true task.defer(doMedusaTP) end
-            return
-        end
-        if child.Name == "Ragdoll" or child.Name == "IsRagdoll" then
-            if not tpWasRagdolled then tpWasRagdolled = true task.defer(doRagdollTP) end
-        end
-    end)
-    tpChildRemConn = char.ChildRemoved:Connect(function(child)
-        if child.Name == "Ragdoll" or child.Name == "IsRagdoll" then tpWasRagdolled = false end
-        if isMedusaTPChild(child.Name) then tpMedusaActive = false end
-    end)
-end
-local function startRagdollTP()
-    tpWasRagdolled = false tpCooldown = false
-    local char = player.Character if char then hookTPCharacter(char) end
-end
-local function stopRagdollTP()
-    if tpStateConn    then tpStateConn:Disconnect()    tpStateConn    = nil end
-    if tpChildConn    then tpChildConn:Disconnect()    tpChildConn    = nil end
-    if tpChildRemConn then tpChildRemConn:Disconnect() tpChildRemConn = nil end
-    tpWasRagdolled = false tpMedusaActive = false
 end
 
 -- ============================================================
@@ -707,45 +585,7 @@ local function applyFOV()
 end
 
 -- ============================================================
--- GALAXY
--- ============================================================
-local function setupGalaxyForce()
-    local h = getHRP() if not h then return end
-    if galaxyVF  then galaxyVF:Destroy()  end
-    if galaxyAtt then galaxyAtt:Destroy() end
-    galaxyAtt = Instance.new("Attachment") galaxyAtt.Parent = h
-    galaxyVF  = Instance.new("VectorForce")
-    galaxyVF.Attachment0         = galaxyAtt
-    galaxyVF.ApplyAtCenterOfMass = true
-    galaxyVF.RelativeTo          = Enum.ActuatorRelativeTo.World
-    galaxyVF.Force               = Vector3.zero
-    galaxyVF.Parent              = h
-end
-local function updateGalaxyForce()
-    if not galaxyEnabled or not galaxyVF or not gChar then return end
-    local mass = 0
-    for _, p in ipairs(gChar:GetDescendants()) do
-        if p:IsA("BasePart") then mass = mass + p:GetMass() end
-    end
-    local tg = DEFAULT_GRAVITY * (GALAXY_GRAVITY / 100)
-    galaxyVF.Force = Vector3.new(0, mass * (DEFAULT_GRAVITY - tg) * 0.95, 0)
-end
-local function startGalaxy() galaxyEnabled = true hopsEnabled = true pcall(setupGalaxyForce) end
-local function stopGalaxy()
-    galaxyEnabled = false hopsEnabled = false
-    if galaxyVF  then galaxyVF:Destroy()  galaxyVF  = nil end
-    if galaxyAtt then galaxyAtt:Destroy() galaxyAtt = nil end
-end
-local function doHop()
-    local h  = getHRP() local hh = getHum() if not h or not hh then return end
-    if tick() - lastHop < HOP_COOLDOWN then return end lastHop = tick()
-    if hh.FloorMaterial == Enum.Material.Air then
-        h.AssemblyLinearVelocity = Vector3.new(h.AssemblyLinearVelocity.X, GALAXY_HOP, h.AssemblyLinearVelocity.Z)
-    end
-end
-
--- ============================================================
--- TARGET (simple closest player, no tracker)
+-- TARGET
 -- ============================================================
 local function isTargetValid(targetChar)
     if not targetChar then return false end
@@ -774,7 +614,7 @@ local function getBestTarget(myHRP)
 end
 
 -- ============================================================
--- BAT AIMBOT (fixed, no tracker)
+-- BAT AIMBOT
 -- ============================================================
 local function startBatAimbot()
     if aimbotConnection then return end
@@ -791,7 +631,7 @@ local function startBatAimbot()
     align.Mode           = Enum.OrientationAlignmentMode.OneAttachment
     align.Attachment0    = attachment
     align.MaxTorque      = math.huge
-    align.Responsiveness = 250
+    align.Responsiveness = 400 
 
     batAimbotEnabled = true
 
@@ -817,32 +657,32 @@ local function startBatAimbot()
             local curVertVel = myHRP.AssemblyLinearVelocity.Y
             local newVertVel = curVertVel
 
-            if vertDiff > 2.0 then
-                newVertVel = math.clamp(vertDiff * 8, 25, INF_JUMP_FORCE * 1.35)
+            if vertDiff > 1.5 then 
+                newVertVel = math.clamp(vertDiff * 6, 25, INF_JUMP_FORCE * 1.35) 
             elseif vertDiff < -2.5 then
                 newVertVel = math.clamp(vertDiff * 1.8, -CLAMP_FALL, -4)
             end
 
-            if dist > MELEE_OFFSET then
+            if dist > MELEE_OFFSET then 
                 if flat.Magnitude > 0.01 then
                     myHRP.AssemblyLinearVelocity = Vector3.new(
-                        flat.Unit.X * 60,
+                        flat.Unit.X * 60, 
                         newVertVel,
-                        flat.Unit.Z * 60)
+                        flat.Unit.Z * 60) 
                 end
             else
                 myHRP.AssemblyLinearVelocity = Vector3.new(
-                    myHRP.AssemblyLinearVelocity.X * 0.2,
+                    myHRP.AssemblyLinearVelocity.X * 0.08,
                     curVertVel,
-                    myHRP.AssemblyLinearVelocity.Z * 0.2)
+                    myHRP.AssemblyLinearVelocity.Z * 0.08) 
             end
         else
             aimbotHighlight.Adornee = nil
             lockedTarget = nil
             myHRP.AssemblyLinearVelocity = Vector3.new(
-                myHRP.AssemblyLinearVelocity.X * 0.2,
+                myHRP.AssemblyLinearVelocity.X * 0.08, 
                 myHRP.AssemblyLinearVelocity.Y,
-                myHRP.AssemblyLinearVelocity.Z * 0.2)
+                myHRP.AssemblyLinearVelocity.Z * 0.08)
         end
     end)
 end
@@ -861,6 +701,7 @@ local function stopBatAimbot()
     if hum then hum.AutoRotate = true end
     lockedTarget = nil aimbotHighlight.Adornee = nil
 end
+            
 
 -- ============================================================
 -- AUTO PLAY LEFT / RIGHT
@@ -1047,8 +888,6 @@ end)
 RunService.Heartbeat:Connect(function()
     if not gChar or not gHum or not gHrp then return end
     if spinBotEnabled and spinBAV then spinBAV.AngularVelocity = Vector3.new(0, SPIN_SPEED, 0) end
-    if galaxyEnabled then updateGalaxyForce() end
-    if galaxyEnabled and hopsEnabled and spaceHeld then doHop() end
     if not batAimbotEnabled and not aplOn and not aprOn then
         local md = gHum.MoveDirection
         if md.Magnitude > 0.1 then
@@ -1058,9 +897,6 @@ RunService.Heartbeat:Connect(function()
     end
 end)
 
-UserInputService.InputBegan:Connect(function(input)  if input.KeyCode == Enum.KeyCode.Space then spaceHeld = true  end end)
-UserInputService.InputEnded:Connect(function(input)  if input.KeyCode == Enum.KeyCode.Space then spaceHeld = false end end)
-
 local function setupChar(c)
     gChar = c
     gHum  = c:WaitForChild("Humanoid", 5)
@@ -1068,12 +904,10 @@ local function setupChar(c)
     if not gHum or not gHrp then return end
     task.wait(0.5)
     makeSpeedBB()
-    if galaxyEnabled       then stopGalaxy()      startGalaxy()      end
     if antiRagdollEnabled  then stopAntiRagdoll()  startAntiRagdoll() end
     if espEnabled          then enableESP()                          end
     if batAimbotEnabled    then stopBatAimbot()    startBatAimbot()   end
     if unwalkEnabled       then startUnwalk()                        end
-    if RagdollTPEnabled    then hookTPCharacter(c)                   end
 end
 if player.Character then setupChar(player.Character) end
 player.CharacterAdded:Connect(function(c) task.wait(0.5) setupChar(c) end)
@@ -1107,6 +941,7 @@ MainStroke.ApplyStrokeMode  = Enum.ApplyStrokeMode.Border
 do
     local dragging, dragStart, startPos
     MainFrame.InputBegan:Connect(function(input)
+        if uiLocked then return end
         if input.UserInputType == Enum.UserInputType.MouseButton1
         or input.UserInputType == Enum.UserInputType.Touch then
             dragging  = true
@@ -1118,6 +953,7 @@ do
         end
     end)
     UserInputService.InputChanged:Connect(function(input)
+        if uiLocked then return end
         if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement
         or input.UserInputType == Enum.UserInputType.Touch) then
             local delta = input.Position - dragStart
@@ -1349,10 +1185,7 @@ end)
 makeToggle("Anti Ragdoll", 3, function(v)
     antiRagdollEnabled = v if v then startAntiRagdoll() else stopAntiRagdoll() end
 end)
-makeToggle("Ragdoll TP", 4, function(v)
-    RagdollTPEnabled = v if v then startRagdollTP() else stopRagdollTP() end
-end)
-makeToggle("Unwalk", 5, function(v)
+makeToggle("Unwalk", 4, function(v)
     unwalkEnabled = v if v then startUnwalk() else stopUnwalk() end
 end)
 
@@ -1371,10 +1204,7 @@ makeToggle("Auto Play Right", 12, function(v)
         aprOn = true startAutoPlayRight()
     else stopAutoPlayRight() end
 end)
-makeToggle("Galaxy Mode", 13, function(v)
-    galaxyEnabled = v if v then startGalaxy() else stopGalaxy() end
-end)
-makeToggle("Slow Down", 14, function(v) slowDownEnabled = v end)
+makeToggle("Slow Down", 13, function(v) slowDownEnabled = v end)
 
 makeSection("STEAL", 20)
 makeToggle("Auto Steal", 21, function(v)
@@ -1395,19 +1225,23 @@ makeSection("SPEEDS", 40)
 makeNumInput("Normal Speed",   NORMAL_SPEED,     41, function(v) NORMAL_SPEED     = v end)
 makeNumInput("Slow Speed",     SLOW_SPEED,       42, function(v) SLOW_SPEED       = v end)
 makeNumInput("FOV",            fovValue,         43, function(v) fovValue          = v applyFOV() end)
-makeNumInput("Engage Range",   BAT_ENGAGE_RANGE, 45, function(v) BAT_ENGAGE_RANGE = v end)
-makeNumInput("Gravity %",      GALAXY_GRAVITY,   46, function(v) GALAXY_GRAVITY   = v end)
-makeNumInput("Hop Power",      GALAXY_HOP,       47, function(v) GALAXY_HOP       = v end)
 
 makeSection("ACTIONS", 50)
 makeActionBtn("DO DROP",  51, doDrop)
 makeActionBtn("TP DOWN",  52, doTPDown)
-
 makeToggle("Taunt Spam", 53, function(v)
     if v then startTaunt() else stopTaunt() end
 end)
 
+-- ============================================================
+-- CONFIG SECTION
+-- ============================================================
 makeSection("CONFIG", 60)
+
+makeToggle("Lock UI Position", 61, function(v)
+    uiLocked = v
+end)
+
 local saveBtn = Instance.new("TextButton", ScrollFrame)
 saveBtn.Size             = UDim2.new(1, 0, 0, 28)
 saveBtn.BackgroundColor3 = Color3.fromRGB(20, 60, 35)
@@ -1416,13 +1250,13 @@ saveBtn.Font             = Enum.Font.GothamBlack
 saveBtn.TextSize         = 10
 saveBtn.TextColor3       = WHITE
 saveBtn.BorderSizePixel  = 0
-saveBtn.LayoutOrder      = 61
+saveBtn.LayoutOrder      = 62
 saveBtn.AutoButtonColor  = false
 Instance.new("UICorner", saveBtn).CornerRadius = UDim.new(0, 8)
 local saveStroke = Instance.new("UIStroke", saveBtn)
-saveStroke.Color       = ACCENT
+saveStroke.Color        = ACCENT
 saveStroke.Transparency = 0.5
-saveStroke.Thickness   = 1
+saveStroke.Thickness    = 1
 saveBtn.MouseEnter:Connect(function()
     TweenService:Create(saveBtn, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(25, 85, 45)}):Play()
 end)
@@ -1439,6 +1273,93 @@ saveBtn.MouseButton1Click:Connect(function()
     end)
 end)
 
+local resetBtn = Instance.new("TextButton", ScrollFrame)
+resetBtn.Size             = UDim2.new(1, 0, 0, 28)
+resetBtn.BackgroundColor3 = Color3.fromRGB(35, 8, 8)
+resetBtn.Text             = "RESET CONFIG"
+resetBtn.Font             = Enum.Font.GothamBlack
+resetBtn.TextSize         = 10
+resetBtn.TextColor3       = Color3.fromRGB(255, 80, 80)
+resetBtn.BorderSizePixel  = 0
+resetBtn.LayoutOrder      = 63
+resetBtn.AutoButtonColor  = false
+Instance.new("UICorner", resetBtn).CornerRadius = UDim.new(0, 8)
+local resetStroke = Instance.new("UIStroke", resetBtn)
+resetStroke.Color        = Color3.fromRGB(200, 50, 50)
+resetStroke.Transparency = 0.4
+resetStroke.Thickness    = 1
+resetBtn.MouseEnter:Connect(function()
+    TweenService:Create(resetBtn, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(60, 12, 12)}):Play()
+end)
+resetBtn.MouseLeave:Connect(function()
+    TweenService:Create(resetBtn, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(35, 8, 8)}):Play()
+end)
+do
+    local resetArmed = false
+    local resetArmConn = nil
+    resetBtn.MouseButton1Click:Connect(function()
+        if not resetArmed then
+            resetArmed = true
+            resetBtn.Text       = "ARE YOU SURE?"
+            resetBtn.TextColor3 = Color3.fromRGB(255, 200, 50)
+            if resetArmConn then resetArmConn:Disconnect() end
+            resetArmConn = task.delay(2.5, function()
+                resetArmed = false
+                resetBtn.Text       = "RESET CONFIG"
+                resetBtn.TextColor3 = Color3.fromRGB(255, 80, 80)
+            end)
+        else
+            resetArmed = false
+            if resetArmConn then task.cancel(resetArmConn) resetArmConn = nil end
+            pcall(function() if delfile then delfile(CONFIG_KEY .. ".json") end end)
+            NORMAL_SPEED     = 59
+            SLOW_SPEED       = 29
+            STEAL_RADIUS     = 8
+            STEAL_DURATION   = 0.2
+            fovValue         = 120
+            for name, t in pairs(toggleStates) do
+                if t.state then
+                    t.state = false
+                    t.track.BackgroundColor3 = OFF_CLR
+                    t.dot.Position = UDim2.new(0, 2, 0.5, -t.dotSz/2)
+                end
+            end
+            uiLocked         = false
+            slowDownEnabled  = false
+            autoStealEnabled = false
+            stopAutoSteal()
+            if batAimbotEnabled    then stopBatAimbot()    end
+            if antiRagdollEnabled  then stopAntiRagdoll()  antiRagdollEnabled = false end
+            if unwalkEnabled       then stopUnwalk()       unwalkEnabled      = false end
+            if aplOn               then stopAutoPlayLeft()                           end
+            if aprOn               then stopAutoPlayRight()                          end
+            if tauntActive         then stopTaunt()                                  end
+            Keybinds.AutoLeft    = Enum.KeyCode.Q
+            Keybinds.AutoRight   = Enum.KeyCode.E
+            Keybinds.AutoSteal   = Enum.KeyCode.V
+            Keybinds.BatAimbot   = Enum.KeyCode.Z
+            Keybinds.AntiRagdoll = Enum.KeyCode.X
+            Keybinds.Unwalk      = Enum.KeyCode.N
+            Keybinds.SlowDown    = Enum.KeyCode.F7
+            Keybinds.Drop        = Enum.KeyCode.F3
+            Keybinds.Taunt       = Enum.KeyCode.F4
+            Keybinds.TPDown      = Enum.KeyCode.G
+            for kName, kBtn in pairs(KeybindButtons) do
+                kBtn.Text = Keybinds[kName] and tostring(Keybinds[kName]):gsub("Enum.KeyCode.","") or "NONE"
+            end
+            resetBtn.Text       = "RESET DONE"
+            resetBtn.TextColor3 = Color3.fromRGB(100, 255, 140)
+            task.delay(2, function()
+                resetBtn.Text       = "RESET CONFIG"
+                resetBtn.TextColor3 = Color3.fromRGB(255, 80, 80)
+            end)
+        end
+    end)
+end
+
+-- ============================================================
+-- KEYBINDS
+-- ============================================================
 makeSection("KEYBINDS (click to rebind)", 70)
 local hint = Instance.new("TextLabel", ScrollFrame)
 hint.Size                   = UDim2.new(1, 0, 0, 24)
@@ -1456,8 +1377,7 @@ Instance.new("UICorner", hint).CornerRadius = UDim.new(0, 6)
 local bindList = {
     {"Auto Left","AutoLeft"}, {"Auto Right","AutoRight"}, {"Auto Steal","AutoSteal"},
     {"Bat Aimbot","BatAimbot"}, {"Anti Ragdoll","AntiRagdoll"}, {"Unwalk","Unwalk"},
-    {"Slow Down","SlowDown"}, {"Ragdoll TP","RagdollTP"}, {"Drop","Drop"},
-    {"Taunt","Taunt"}, {"TP Down","TPDown"},
+    {"Slow Down","SlowDown"}, {"Drop","Drop"}, {"Taunt","Taunt"}, {"TP Down","TPDown"},
 }
 for idx, entry in ipairs(bindList) do
     local displayName, keyName = entry[1], entry[2]
@@ -1642,12 +1562,14 @@ local function makeMob(label, pos, toggleName, onAct)
 
     local dragging2, dragStart2, startPos2
     btn.InputBegan:Connect(function(input)
+        if uiLocked then return end
         if input.UserInputType == Enum.UserInputType.MouseButton1
         or input.UserInputType == Enum.UserInputType.Touch then
             dragging2 = true dragStart2 = input.Position startPos2 = btn.Position
         end
     end)
     UserInputService.InputChanged:Connect(function(input)
+        if uiLocked then return end
         if dragging2 and (input.UserInputType == Enum.UserInputType.MouseMovement
         or input.UserInputType == Enum.UserInputType.Touch) then
             local delta = input.Position - dragStart2
@@ -1842,11 +1764,6 @@ UserInputService.InputBegan:Connect(function(input, processed)
     elseif Keybinds.SlowDown and input.KeyCode == Keybinds.SlowDown then
         local ns = not(toggleStates["Slow Down"] and toggleStates["Slow Down"].state)
         slowDownEnabled = ns updateToggle("Slow Down", ns)
-
-    elseif Keybinds.RagdollTP and input.KeyCode == Keybinds.RagdollTP then
-        local ns = not(toggleStates["Ragdoll TP"] and toggleStates["Ragdoll TP"].state)
-        RagdollTPEnabled = ns if ns then startRagdollTP() else stopRagdollTP() end
-        updateToggle("Ragdoll TP", ns)
 
     elseif Keybinds.Drop and input.KeyCode == Keybinds.Drop then
         task.spawn(doDrop)
