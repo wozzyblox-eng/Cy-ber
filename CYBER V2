@@ -206,16 +206,6 @@ local function startLagger()
     coroutine.resume(laggerThread)
 end
 
-local function toggleLagger()
-    if laggerEnabled then
-        stopLaggerLoop()
-        print("[Cyber Lagger] OFF")
-    else
-        startLagger()
-        print("[Cyber Lagger] ON - Lag switch activated")
-    end
-end
-
 -- ============================================================
 -- SAVE/LOAD CONFIG
 -- ============================================================
@@ -714,23 +704,21 @@ local function disableESP()
 end
 
 -- ============================================================
--- MORNING OPTIMIZER (MALIWANAG AT MAGANDA)
+-- MORNING OPTIMIZER
 -- ============================================================
 local optimizerDescConn = nil
 
 local function enableOptimizer()
-    -- Morning lighting settings
     pcall(function()
         settings().Rendering.QualityLevel = Enum.QualityLevel.Level01
         Lighting.GlobalShadows = false
         Lighting.Brightness = 2
         Lighting.FogEnd = 9e9
         Lighting.FogStart = 9e9
-        Lighting.ClockTime = 8  -- 8 AM (umaga)
-        Lighting.Ambient = Color3.fromRGB(180, 180, 255)  -- Magandang morning ambient
+        Lighting.ClockTime = 8
+        Lighting.Ambient = Color3.fromRGB(180, 180, 255)
         Lighting.OutdoorAmbient = Color3.fromRGB(180, 180, 255)
         
-        -- Remove post effects
         for _, fx in ipairs(Lighting:GetChildren()) do
             if fx:IsA("PostEffect") or fx:IsA("Atmosphere") or fx:IsA("Sky") then
                 pcall(function() fx:Destroy() end)
@@ -738,7 +726,6 @@ local function enableOptimizer()
         end
     end)
 
-    -- Remove visual clutter (keep game clean)
     pcall(function()
         for _, obj in ipairs(workspace:GetDescendants()) do
             pcall(function()
@@ -761,7 +748,6 @@ local function enableOptimizer()
         end
     end)
 
-    -- Auto-block future effects
     pcall(function()
         if optimizerDescConn then optimizerDescConn:Disconnect() end
         optimizerDescConn = workspace.DescendantAdded:Connect(function(obj)
@@ -792,11 +778,6 @@ local function disableOptimizer()
         optimizerDescConn:Disconnect()
         optimizerDescConn = nil
     end
-end
-
-local function applyFOV()
-    if fovConn then fovConn:Disconnect() end
-    fovConn = RunService.RenderStepped:Connect(function() camera.FieldOfView = fovValue end)
 end
 
 -- ============================================================
@@ -1073,7 +1054,6 @@ end)
 
 RunService.Heartbeat:Connect(function()
     if not gChar or not gHum or not gHrp then return end
-    if spinBotEnabled and spinBAV then spinBAV.AngularVelocity = Vector3.new(0, SPIN_SPEED, 0) end
     if not batAimbotEnabled and not aplOn and not aprOn then
         local md = gHum.MoveDirection
         if md.Magnitude > 0.1 then
@@ -1166,7 +1146,7 @@ if player.Character then setupChar(player.Character) end
 player.CharacterAdded:Connect(function(c) task.wait(0.5) setupChar(c) end)
 
 -- ============================================================
--- GUI CONSTRUCTION - COMPLETE WITH ALL BUTTONS
+-- GUI CONSTRUCTION
 -- ============================================================
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name            = "CYBER HUB"
@@ -1230,15 +1210,6 @@ TitleFix.Size             = UDim2.new(1, 0, 0, 12)
 TitleFix.Position         = UDim2.new(0, 0, 1, -12)
 TitleFix.BackgroundColor3 = Color3.fromRGB(18, 14, 32)
 TitleFix.BorderSizePixel  = 0
-
-local TitleIcon = Instance.new("TextLabel", TitleBar)
-TitleIcon.Size                   = UDim2.new(0, 30, 1, 0)
-TitleIcon.Position               = UDim2.new(0, 12, 0, 0)
-TitleIcon.BackgroundTransparency = 1
-TitleIcon.Text                   = ""
-TitleIcon.Font                   = Enum.Font.GothamBlack
-TitleIcon.TextSize               = 18
-TitleIcon.TextColor3             = ACCENT
 
 local TitleLbl = Instance.new("TextLabel", TitleBar)
 TitleLbl.Size                   = UDim2.new(1, -100, 1, 0)
@@ -1552,7 +1523,7 @@ saveBtn.MouseButton1Click:Connect(function()
 end)
 
 -- ============================================================
--- FIXED RESET CONFIG BUTTON
+-- FIXED RESET CONFIG BUTTON (WITH MOBILE BUTTON RESET)
 -- ============================================================
 local resetBtn = Instance.new("TextButton", ScrollFrame)
 resetBtn.Size             = UDim2.new(1, 0, 0, 32)
@@ -1593,14 +1564,14 @@ do
         else
             resetArmed = false
             if resetArmConn then task.cancel(resetArmConn) resetArmConn = nil end
-            
+
             -- Delete config file
             pcall(function() 
                 if delfile then 
                     delfile(CONFIG_KEY .. ".json") 
                 end 
             end)
-            
+
             -- Reset all values to defaults
             NORMAL_SPEED     = 59
             SLOW_SPEED       = 29
@@ -1613,23 +1584,23 @@ do
             speedCustMode    = "NORMAL"
             speedCustEnabled = true
             medusaCounterEnabled = false
-            
+
             -- Stop lagger if running
             if laggerEnabled then
                 stopLaggerLoop()
             end
-            
+
             -- Stop medusa counter
             stopMedusaCounter()
-            
-            -- Reset ALL toggle states (comprehensive reset)
-            if toggleStates["Bat Aimbot"] and toggleStates["Bat Aimbot"].state then
+
+            -- Stop all active features
+            if batAimbotEnabled then
                 stopBatAimbot()
             end
-            if toggleStates["Anti Ragdoll"] and toggleStates["Anti Ragdoll"].state then
+            if antiRagdollEnabled then
                 stopAntiRagdoll()
             end
-            if toggleStates["Unwalk"] and toggleStates["Unwalk"].state then
+            if unwalkEnabled then
                 stopUnwalk()
             end
             if aplOn then
@@ -1638,13 +1609,13 @@ do
             if aprOn then
                 stopAutoPlayRight()
             end
-            if toggleStates["Auto Steal"] and toggleStates["Auto Steal"].state then
+            if autoStealEnabled then
                 stopAutoSteal()
             end
             if tauntActive then
                 stopTaunt()
             end
-            
+
             -- Reset toggle states in UI
             for name, t in pairs(toggleStates) do
                 if t.state then
@@ -1653,7 +1624,7 @@ do
                     t.dot.Position = UDim2.new(0, 3, 0.5, -t.dotSz/2)
                 end
             end
-            
+
             -- Reset individual flags
             uiLocked         = false
             slowDownEnabled  = false
@@ -1661,7 +1632,7 @@ do
             batAimbotEnabled = false
             antiRagdollEnabled = false
             unwalkEnabled = false
-            
+
             -- Reset keybinds to defaults
             Keybinds.AutoLeft    = Enum.KeyCode.Q
             Keybinds.AutoRight   = Enum.KeyCode.E
@@ -1674,7 +1645,7 @@ do
             Keybinds.Taunt       = Enum.KeyCode.F4
             Keybinds.TPDown      = Enum.KeyCode.G
             Keybinds.Lagger      = Enum.KeyCode.L
-            
+
             -- Update keybind buttons in GUI
             for kName, kBtn in pairs(KeybindButtons) do
                 if Keybinds[kName] then
@@ -1683,37 +1654,68 @@ do
                     kBtn.Text = "NONE"
                 end
             end
-            
+
             -- Update radius input field
             if RadiusInput then
                 RadiusInput.Text = tostring(STEAL_RADIUS)
             end
-            
-            -- Update progress label
+
+            -- Update progress label and bar
             if ProgressLabel then
                 ProgressLabel.Text = "CYBER READY"
             end
-            
-            -- Reset progress bar
             if ProgressBarFill then
                 ProgressBarFill.Size = UDim2.new(0, 0, 1, 0)
             end
-            
             if ProgressPctLabel then
                 ProgressPctLabel.Text = ""
             end
+
+            -- ============================================================
+            -- RESET MOBILE BUTTONS VISUAL STATE
+            -- ============================================================
+            -- Reset "Auto Left" mobile button
+            if mobBtnRefs["Auto Play Left"] then
+                mobBtnRefs["Auto Play Left"].BackgroundColor3 = Color3.fromRGB(8, 8, 16)
+                mobBtnRefs["Auto Play Left"].TextColor3 = ACCENT
+            end
             
+            -- Reset "Auto Right" mobile button
+            if mobBtnRefs["Auto Play Right"] then
+                mobBtnRefs["Auto Play Right"].BackgroundColor3 = Color3.fromRGB(8, 8, 16)
+                mobBtnRefs["Auto Play Right"].TextColor3 = ACCENT
+            end
+            
+            -- Reset "Bat Aimbot" mobile button
+            if mobBtnRefs["Bat Aimbot"] then
+                mobBtnRefs["Bat Aimbot"].BackgroundColor3 = Color3.fromRGB(8, 8, 16)
+                mobBtnRefs["Bat Aimbot"].TextColor3 = ACCENT
+            end
+            
+            -- Reset "Slow Down" mobile button
+            if mobBtnRefs["Slow Down"] then
+                mobBtnRefs["Slow Down"].BackgroundColor3 = Color3.fromRGB(8, 8, 16)
+                mobBtnRefs["Slow Down"].TextColor3 = ACCENT
+            end
+            
+            -- Reset "Cyber Lagger (Lag Switch)" mobile button
+            if mobBtnRefs["Cyber Lagger (Lag Switch)"] then
+                mobBtnRefs["Cyber Lagger (Lag Switch)"].BackgroundColor3 = Color3.fromRGB(8, 8, 16)
+                mobBtnRefs["Cyber Lagger (Lag Switch)"].TextColor3 = ACCENT
+            end
+
             -- Force save empty config
             task.defer(saveConfig)
-            
+
             resetBtn.Text       = "RESET DONE"
             resetBtn.TextColor3 = Color3.fromRGB(100, 255, 140)
             task.delay(2, function()
                 resetBtn.Text       = "RESET CONFIG"
                 resetBtn.TextColor3 = Color3.fromRGB(255, 80, 80)
             end)
-            
+
             print("=== CONFIG RESET TO DEFAULT ===")
+            print("=== MOBILE BUTTONS RESET ===")
         end
     end)
 end
@@ -1904,8 +1906,6 @@ do
     SCGui.ResetOnSpawn = false
     SCGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 
-    local speedWidgetLocked = false
-
     local SCFrame = Instance.new("Frame", SCGui)
     SCFrame.Name             = "SCFrame"
     SCFrame.Size             = UDim2.new(0, 160, 0, 132)
@@ -1960,7 +1960,6 @@ do
     local startPos = nil
 
     SCTitle.InputBegan:Connect(function(input)
-        if speedWidgetLocked then return end
         if input.UserInputType == Enum.UserInputType.MouseButton1
         or input.UserInputType == Enum.UserInputType.Touch then
             dragging = true
@@ -1972,7 +1971,6 @@ do
         dragging = false
     end)
     UserInputService.InputChanged:Connect(function(input)
-        if speedWidgetLocked then return end
         if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement
         or input.UserInputType == Enum.UserInputType.Touch) then
             local delta = input.Position - dragStart
