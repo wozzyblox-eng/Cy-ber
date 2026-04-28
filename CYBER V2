@@ -713,52 +713,85 @@ local function disableESP()
     espConns = {}
 end
 
+-- ============================================================
+-- MORNING OPTIMIZER (MALIWANAG AT MAGANDA)
+-- ============================================================
+local optimizerDescConn = nil
+
 local function enableOptimizer()
+    -- Morning lighting settings
     pcall(function()
         settings().Rendering.QualityLevel = Enum.QualityLevel.Level01
-        Lighting.GlobalShadows = false Lighting.Brightness = 2
-        Lighting.FogEnd = 9e9 Lighting.FogStart = 9e9
+        Lighting.GlobalShadows = false
+        Lighting.Brightness = 2
+        Lighting.FogEnd = 9e9
+        Lighting.FogStart = 9e9
+        Lighting.ClockTime = 8  -- 8 AM (umaga)
+        Lighting.Ambient = Color3.fromRGB(180, 180, 255)  -- Magandang morning ambient
+        Lighting.OutdoorAmbient = Color3.fromRGB(180, 180, 255)
+        
+        -- Remove post effects
         for _, fx in ipairs(Lighting:GetChildren()) do
-            if fx:IsA("PostEffect") then fx.Enabled = false end
-        end
-    end)
-    pcall(function()
-        for _, obj in ipairs(workspace:GetDescendants()) do
-            pcall(function()
-                if obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Beam")
-                    or obj:IsA("Smoke") or obj:IsA("Fire") or obj:IsA("Sparkles") then
-                    obj.Enabled = false obj:Destroy()
-                elseif obj:IsA("SelectionBox") then obj:Destroy()
-                elseif obj:IsA("BasePart") then
-                    obj.CastShadow = false obj.Material = Enum.Material.Plastic
-                    for _, ch in ipairs(obj:GetChildren()) do
-                        if ch:IsA("Decal") or ch:IsA("Texture") or ch:IsA("SurfaceAppearance") then
-                            ch:Destroy()
-                        end
-                    end
-                elseif obj:IsA("Sky") then obj:Destroy() end
-            end)
-        end
-    end)
-    pcall(function()
-        for _, obj in ipairs(workspace:GetDescendants()) do
-            if obj:IsA("BasePart") and obj.Anchored
-                and (obj.Name:lower():find("base") or (obj.Parent and obj.Parent.Name:lower():find("base"))) then
-                xrayOrig[obj] = obj.LocalTransparencyModifier
-                obj.LocalTransparencyModifier = 0.88
+            if fx:IsA("PostEffect") or fx:IsA("Atmosphere") or fx:IsA("Sky") then
+                pcall(function() fx:Destroy() end)
             end
         end
     end)
+
+    -- Remove visual clutter (keep game clean)
+    pcall(function()
+        for _, obj in ipairs(workspace:GetDescendants()) do
+            pcall(function()
+                if obj:IsA("ParticleEmitter") or obj:IsA("Trail")
+                or obj:IsA("Beam") or obj:IsA("Smoke")
+                or obj:IsA("Fire") or obj:IsA("Sparkles") then
+                    obj:Destroy()
+                elseif obj:IsA("SelectionBox") then
+                    obj:Destroy()
+                elseif obj:IsA("BasePart") then
+                    obj.CastShadow = false
+                    obj.Material = Enum.Material.SmoothPlastic
+                    for _, ch in ipairs(obj:GetChildren()) do
+                        if ch:IsA("Decal") or ch:IsA("Texture") then
+                            ch:Destroy()
+                        end
+                    end
+                end
+            end)
+        end
+    end)
+
+    -- Auto-block future effects
+    pcall(function()
+        if optimizerDescConn then optimizerDescConn:Disconnect() end
+        optimizerDescConn = workspace.DescendantAdded:Connect(function(obj)
+            if not optimizerEnabled then return end
+            pcall(function()
+                if obj:IsA("ParticleEmitter") or obj:IsA("Trail")
+                or obj:IsA("Beam") or obj:IsA("Smoke")
+                or obj:IsA("Fire") or obj:IsA("Sparkles") then
+                    obj:Destroy()
+                end
+            end)
+        end)
+    end)
 end
+
 local function disableOptimizer()
     pcall(function()
         settings().Rendering.QualityLevel = Enum.QualityLevel.Automatic
-        Lighting.GlobalShadows = true Lighting.FogEnd = 100000 Lighting.FogStart = 0
+        Lighting.GlobalShadows = true
+        Lighting.Brightness = 2
+        Lighting.FogEnd = 100000
+        Lighting.FogStart = 0
+        Lighting.ClockTime = 14
+        Lighting.Ambient = Color3.fromRGB(127, 127, 127)
+        Lighting.OutdoorAmbient = Color3.fromRGB(127, 127, 127)
     end)
-    for part, val in pairs(xrayOrig) do
-        if part and part.Parent then part.LocalTransparencyModifier = val end
+    if optimizerDescConn then
+        optimizerDescConn:Disconnect()
+        optimizerDescConn = nil
     end
-    xrayOrig = {}
 end
 
 local function applyFOV()
@@ -1518,6 +1551,9 @@ saveBtn.MouseButton1Click:Connect(function()
     end)
 end)
 
+-- ============================================================
+-- FIXED RESET CONFIG BUTTON
+-- ============================================================
 local resetBtn = Instance.new("TextButton", ScrollFrame)
 resetBtn.Size             = UDim2.new(1, 0, 0, 32)
 resetBtn.BackgroundColor3 = Color3.fromRGB(35, 8, 8)
@@ -1557,20 +1593,59 @@ do
         else
             resetArmed = false
             if resetArmConn then task.cancel(resetArmConn) resetArmConn = nil end
-            pcall(function() if delfile then delfile(CONFIG_KEY .. ".json") end end)
+            
+            -- Delete config file
+            pcall(function() 
+                if delfile then 
+                    delfile(CONFIG_KEY .. ".json") 
+                end 
+            end)
+            
+            -- Reset all values to defaults
             NORMAL_SPEED     = 59
             SLOW_SPEED       = 29
-            STEAL_RADIUS     = 8
+            STEAL_RADIUS     = 9
             STEAL_DURATION   = 0.2
             fovValue         = 120
             INF_JUMP_FORCE   = 54
-            DESYNC_SPEED     = 120
-            DESYNC_STEAL_SPD = 60
+            DESYNC_SPEED     = 59
+            DESYNC_STEAL_SPD = 29
             speedCustMode    = "NORMAL"
             speedCustEnabled = true
             medusaCounterEnabled = false
-            stopLaggerLoop()
+            
+            -- Stop lagger if running
+            if laggerEnabled then
+                stopLaggerLoop()
+            end
+            
+            -- Stop medusa counter
             stopMedusaCounter()
+            
+            -- Reset ALL toggle states (comprehensive reset)
+            if toggleStates["Bat Aimbot"] and toggleStates["Bat Aimbot"].state then
+                stopBatAimbot()
+            end
+            if toggleStates["Anti Ragdoll"] and toggleStates["Anti Ragdoll"].state then
+                stopAntiRagdoll()
+            end
+            if toggleStates["Unwalk"] and toggleStates["Unwalk"].state then
+                stopUnwalk()
+            end
+            if aplOn then
+                stopAutoPlayLeft()
+            end
+            if aprOn then
+                stopAutoPlayRight()
+            end
+            if toggleStates["Auto Steal"] and toggleStates["Auto Steal"].state then
+                stopAutoSteal()
+            end
+            if tauntActive then
+                stopTaunt()
+            end
+            
+            -- Reset toggle states in UI
             for name, t in pairs(toggleStates) do
                 if t.state then
                     t.state = false
@@ -1578,16 +1653,16 @@ do
                     t.dot.Position = UDim2.new(0, 3, 0.5, -t.dotSz/2)
                 end
             end
+            
+            -- Reset individual flags
             uiLocked         = false
             slowDownEnabled  = false
             autoStealEnabled = false
-            stopAutoSteal()
-            if batAimbotEnabled    then stopBatAimbot()    end
-            if antiRagdollEnabled  then stopAntiRagdoll()  antiRagdollEnabled = false end
-            if unwalkEnabled       then stopUnwalk()       unwalkEnabled      = false end
-            if aplOn               then stopAutoPlayLeft()                           end
-            if aprOn               then stopAutoPlayRight()                          end
-            if tauntActive         then stopTaunt()                                  end
+            batAimbotEnabled = false
+            antiRagdollEnabled = false
+            unwalkEnabled = false
+            
+            -- Reset keybinds to defaults
             Keybinds.AutoLeft    = Enum.KeyCode.Q
             Keybinds.AutoRight   = Enum.KeyCode.E
             Keybinds.AutoSteal   = Enum.KeyCode.V
@@ -1599,15 +1674,46 @@ do
             Keybinds.Taunt       = Enum.KeyCode.F4
             Keybinds.TPDown      = Enum.KeyCode.G
             Keybinds.Lagger      = Enum.KeyCode.L
+            
+            -- Update keybind buttons in GUI
             for kName, kBtn in pairs(KeybindButtons) do
-                kBtn.Text = Keybinds[kName] and tostring(Keybinds[kName]):gsub("Enum.KeyCode.","") or "NONE"
+                if Keybinds[kName] then
+                    kBtn.Text = tostring(Keybinds[kName]):gsub("Enum.KeyCode.","")
+                else
+                    kBtn.Text = "NONE"
+                end
             end
+            
+            -- Update radius input field
+            if RadiusInput then
+                RadiusInput.Text = tostring(STEAL_RADIUS)
+            end
+            
+            -- Update progress label
+            if ProgressLabel then
+                ProgressLabel.Text = "CYBER READY"
+            end
+            
+            -- Reset progress bar
+            if ProgressBarFill then
+                ProgressBarFill.Size = UDim2.new(0, 0, 1, 0)
+            end
+            
+            if ProgressPctLabel then
+                ProgressPctLabel.Text = ""
+            end
+            
+            -- Force save empty config
+            task.defer(saveConfig)
+            
             resetBtn.Text       = "RESET DONE"
             resetBtn.TextColor3 = Color3.fromRGB(100, 255, 140)
             task.delay(2, function()
                 resetBtn.Text       = "RESET CONFIG"
                 resetBtn.TextColor3 = Color3.fromRGB(255, 80, 80)
             end)
+            
+            print("=== CONFIG RESET TO DEFAULT ===")
         end
     end)
 end
@@ -1665,11 +1771,13 @@ for idx, entry in ipairs(bindList) do
         changingKeybind       = keyName
         keyBtn.Text           = "..."
         keyBtn.TextColor3     = Color3.fromRGB(255, 200, 50)
-        local conn conn = UserInputService.InputBegan:Connect(function(input)
+        local conn
+        conn = UserInputService.InputBegan:Connect(function(input)
             if input.UserInputType == Enum.UserInputType.Keyboard then
                 if input.KeyCode == Enum.KeyCode.LeftControl or input.KeyCode == Enum.KeyCode.RightControl then
-                    Keybinds[keyName] = nil keyBtn.Text = "NONE"
-                else
+                    Keybinds[keyName] = nil
+                    keyBtn.Text = "NONE"
+                elseif input.KeyCode ~= Enum.KeyCode.Unknown then
                     Keybinds[keyName] = input.KeyCode
                     keyBtn.Text = tostring(input.KeyCode):gsub("Enum.KeyCode.", "")
                 end
@@ -1966,6 +2074,11 @@ do
     local tabNormal = makeTab("NORMAL", 0)
     local tabDesync = makeTab("DESYNC", 0.5)
 
+    local nSpeedLbl, nSpeedBox
+    local nStealLbl, nStealBox
+    local dSpeedLbl, dSpeedBox
+    local dStealLbl, dStealBox
+
     local function makeSpeedRow(labelTxt, yPos, defaultVal, onChanged)
         local lbl = Instance.new("TextLabel", SCFrame)
         lbl.Size                   = UDim2.new(0, 70, 0, 20)
@@ -2005,10 +2118,10 @@ do
         return lbl, box
     end
 
-    local nSpeedLbl, nSpeedBox = makeSpeedRow("Speed",    82, NORMAL_SPEED,     function(v) NORMAL_SPEED     = v end)
-    local nStealLbl, nStealBox = makeSpeedRow("Steal Spd",104, STEAL_SPEED,     function(v) STEAL_SPEED      = v end)
-    local dSpeedLbl, dSpeedBox = makeSpeedRow("Speed",    82, DESYNC_SPEED,     function(v) DESYNC_SPEED     = v end)
-    local dStealLbl, dStealBox = makeSpeedRow("Steal Spd",104, DESYNC_STEAL_SPD,function(v) DESYNC_STEAL_SPD = v end)
+    nSpeedLbl, nSpeedBox = makeSpeedRow("Speed",    82, NORMAL_SPEED,     function(v) NORMAL_SPEED     = v end)
+    nStealLbl, nStealBox = makeSpeedRow("Steal Spd",104, STEAL_SPEED,      function(v) STEAL_SPEED      = v end)
+    dSpeedLbl, dSpeedBox = makeSpeedRow("Speed",    82, DESYNC_SPEED,      function(v) DESYNC_SPEED     = v end)
+    dStealLbl, dStealBox = makeSpeedRow("Steal Spd",104, DESYNC_STEAL_SPD, function(v) DESYNC_STEAL_SPD = v end)
 
     local function refreshTabs()
         local isNormal = (speedCustMode == "NORMAL")
@@ -2016,10 +2129,14 @@ do
         tabNormal.TextColor3       = isNormal and WHITE or Color3.fromRGB(160, 160, 180)
         tabDesync.BackgroundColor3 = isNormal and Color3.fromRGB(18, 16, 30) or ACCENT
         tabDesync.TextColor3       = isNormal and Color3.fromRGB(160, 160, 180) or WHITE
-        nSpeedLbl.Visible = isNormal nStealLbl.Visible = isNormal
-        nSpeedBox.Visible = isNormal nStealBox.Visible = isNormal
-        dSpeedLbl.Visible = not isNormal dStealLbl.Visible = not isNormal
-        dSpeedBox.Visible = not isNormal dStealBox.Visible = not isNormal
+        if nSpeedLbl then nSpeedLbl.Visible = isNormal end
+        if nStealLbl then nStealLbl.Visible = isNormal end
+        if nSpeedBox then nSpeedBox.Visible = isNormal end
+        if nStealBox then nStealBox.Visible = isNormal end
+        if dSpeedLbl then dSpeedLbl.Visible = not isNormal end
+        if dStealLbl then dStealLbl.Visible = not isNormal end
+        if dSpeedBox then dSpeedBox.Visible = not isNormal end
+        if dStealBox then dStealBox.Visible = not isNormal end
     end
 
     tabNormal.MouseButton1Click:Connect(function() speedCustMode = "NORMAL" refreshTabs() end)
