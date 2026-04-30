@@ -1,3 +1,5 @@
+repeat task.wait() until game:IsLoaded()
+
 local Players          = game:GetService("Players")
 local RunService       = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -19,8 +21,8 @@ local SLOW_SPEED   = 29
 
 local speedCustEnabled = true
 local speedCustMode = "NORMAL"
-local DESYNC_SPEED = 59
-local DESYNC_STEAL_SPD = 29
+local DESYNC_SPEED = 120
+local DESYNC_STEAL_SPD = 60
 
 local holdingItem = false
 local lastHoldingCheck = 0
@@ -39,7 +41,7 @@ local unwalkConn            = nil
 local batAimbotEnabled      = false
 local AIMBOT_SPEED          = 60
 local MELEE_OFFSET          = 1.5
-local BAT_ENGAGE_RANGE      = 5
+local BAT_ENGAGE_RANGE      = 1.5
 local aimbotConnection      = nil
 local lockedTarget          = nil
 local hopsEnabled           = false
@@ -62,7 +64,7 @@ local toggleStates          = {}
 local mobileButtons         = {}
 local mobBtnRefs            = {}
 local AntiRagdollConns      = {}
-local CONFIG_KEY            = "WOZZY_DUELCONFIG"
+local CONFIG_KEY            = "CYBER_DUEL_CONFIG"
 local changingKeybind       = nil
 local SavedToggleStates     = {}
 local aplOn, aplConn, aplPhase = false, nil, 1
@@ -78,6 +80,44 @@ local uiLocked              = false
 local speedWidgetFrame      = nil
 local openButton            = nil
 local SCGui                 = nil
+
+-- ============================================================
+-- DESYNC VARIABLE
+-- ============================================================
+local desyncEnabled = false
+
+-- ============================================================
+-- DESYNC FUNCTION
+-- ============================================================
+local function applyDesync(on)
+    desyncEnabled = on
+    pcall(function()
+        if on then
+            if raknet then
+                raknet.desync(true)
+            end
+            local char = player.Character
+            if char and char:FindFirstChild("Humanoid") then
+                char.Humanoid.Health = 0
+            end
+            print("DESYNC ENABLED")
+        else
+            if raknet then
+                raknet.desync(false)
+            end
+            print("DESYNC DISABLED")
+        end
+    end)
+end
+
+player.CharacterAdded:Connect(function()
+    if desyncEnabled then
+        task.wait(0.5)
+        pcall(function() 
+            if raknet then raknet.desync(true) end
+        end)
+    end
+end)
 
 local medusaCounterEnabled = false
 local medusaDebounce = false
@@ -100,6 +140,7 @@ local Keybinds = {
     SlowDown    = Enum.KeyCode.F7,
     Drop        = Enum.KeyCode.F3,
     TPDown      = Enum.KeyCode.G,
+    Desync      = Enum.KeyCode.R,
 }
 
 local aimbotHighlight = Instance.new("Highlight")
@@ -128,6 +169,7 @@ local function saveConfig()
             speedCustMode    = speedCustMode,
             speedCustEnabled = speedCustEnabled,
             medusaCounterEnabled = medusaCounterEnabled,
+            desyncEnabled    = desyncEnabled,
         }
         for k, v in pairs(toggleStates) do
             if type(v) == "table" and v.state ~= nil then
@@ -183,6 +225,7 @@ local function loadConfig()
         if data.speedCustMode    then speedCustMode    = data.speedCustMode    end
         if data.speedCustEnabled ~= nil then speedCustEnabled = data.speedCustEnabled end
         if data.medusaCounterEnabled ~= nil then medusaCounterEnabled = data.medusaCounterEnabled end
+        if data.desyncEnabled ~= nil then desyncEnabled = data.desyncEnabled end
         for k in pairs(Keybinds) do
             if data["KEY_" .. k] then
                 pcall(function() Keybinds[k] = Enum.KeyCode[data["KEY_" .. k]] end)
@@ -218,12 +261,13 @@ local function resetUIPositions()
     end
     
     local defaultPositions = {
-        UDim2.new(1, -(76+8), 0.42, 0),
-        UDim2.new(1, -(76+8), 0.49, 0),
-        UDim2.new(1, -(76+8), 0.56, 0),
-        UDim2.new(1, -(76+8), 0.63, 0),
-        UDim2.new(1, -(76+8), 0.70, 0),
-        UDim2.new(1, -(76+8), 0.77, 0),
+        UDim2.new(1, -(90+8), 0.36, 0),  -- DROP (bigger button offset)
+        UDim2.new(1, -(90+8), 0.42, 0),  -- AUTO LEFT
+        UDim2.new(1, -(90+8), 0.48, 0),  -- AUTO RIGHT
+        UDim2.new(1, -(90+8), 0.54, 0),  -- AUTO BAT
+        UDim2.new(1, -(90+8), 0.60, 0),  -- SLOW DOWN
+        UDim2.new(1, -(90+8), 0.66, 0),  -- TP DOWN
+        UDim2.new(1, -(90+8), 0.72, 0),  -- DESYNC
     }
     for i, btn in ipairs(mobileButtons) do
         if defaultPositions[i] then
@@ -730,8 +774,9 @@ local function applyFOV()
 end
 
 -- ============================================================
--- BAT AIMBOT FUNCTIONS
+-- BAT AIMBOT FUNCTIONS (1.5 STUDS ENGAGE RANGE)
 -- ============================================================
+
 local function isTargetValid(targetChar)
     if not targetChar then return false end
     local hum = targetChar:FindFirstChildOfClass("Humanoid")
@@ -762,84 +807,64 @@ local function getBestTarget(myHRP)
     return newTargetHRP, newTargetChar
 end
 
-local function findBatTool()
-    local c = player.Character 
-    if not c then return nil end
-    local bp = player:FindFirstChildOfClass("Backpack")
-    local SlapList = {"Bat","Slap","Iron Slap","Gold Slap","Diamond Slap","Emerald Slap","Ruby Slap","Dark Matter Slap","Flame Slap","Nuclear Slap","Galaxy Slap","Glitched Slap"}
-    for _, ch in ipairs(c:GetChildren()) do 
-        if ch:IsA("Tool") and ch.Name:lower():find("bat") then 
-            return ch 
-        end 
-    end
-    if bp then 
-        for _, ch in ipairs(bp:GetChildren()) do 
-            if ch:IsA("Tool") and ch.Name:lower():find("bat") then 
-                return ch 
-            end 
-        end 
-    end
-    for _, name in ipairs(SlapList) do 
-        local t = c:FindFirstChild(name) or (bp and bp:FindFirstChild(name)) 
-        if t then return t end 
-    end
-end
-
 local function startBatAimbot()
     if aimbotConnection then return end
+    
     local c = player.Character 
     if not c then return end
     local h = c:FindFirstChild("HumanoidRootPart") 
     local hum = c:FindFirstChildOfClass("Humanoid")
     if not h or not hum then return end
-    hum.AutoRotate = false
-    local attachment = h:FindFirstChild("AimbotAttachment") or Instance.new("Attachment", h)
-    attachment.Name = "AimbotAttachment"
-    local align = h:FindFirstChild("AimbotAlign") or Instance.new("AlignOrientation", h)
-    align.Name = "AimbotAlign" 
-    align.Mode = Enum.OrientationAlignmentMode.OneAttachment
-    align.Attachment0 = attachment 
-    align.MaxTorque = math.huge 
-    align.Responsiveness = 200
+    
+    hum.AutoRotate = true
     batAimbotEnabled = true
+    
     aimbotConnection = RunService.Heartbeat:Connect(function()
         if not batAimbotEnabled then return end
         if not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then return end
+        
         local currentHRP = player.Character.HumanoidRootPart
-        local currentHum = player.Character:FindFirstChildOfClass("Humanoid")
-        local bat = findBatTool()
-        if bat and bat.Parent ~= player.Character then 
-            pcall(function() currentHum:EquipTool(bat) end) 
-        end
         local targetHRP, targetChar = getBestTarget(currentHRP)
+        
         if targetHRP and targetChar then
             aimbotHighlight.Adornee = targetChar
-            local targetVelocity = targetHRP.AssemblyLinearVelocity
-            local speed = targetVelocity.Magnitude
-            local dynamicPredictTime = math.clamp(speed/150, 0.05, 0.2)
-            local predictedPos = targetHRP.Position + (targetVelocity * dynamicPredictTime)
-            local dirToTarget = (predictedPos - currentHRP.Position)
-            local distance3D = dirToTarget.Magnitude
-            local targetStandPos = predictedPos
-            if distance3D > 0 then 
-                targetStandPos = predictedPos - (dirToTarget.Unit * MELEE_OFFSET) 
-            end
-            align.CFrame = CFrame.lookAt(currentHRP.Position, predictedPos)
-            local moveDir = (targetStandPos - currentHRP.Position)
-            local distToStandPos = moveDir.Magnitude
-            if distToStandPos > 1 then 
-                currentHRP.AssemblyLinearVelocity = moveDir.Unit * AIMBOT_SPEED
+            
+            local moveDir = (targetHRP.Position - currentHRP.Position)
+            local distToTarget = moveDir.Magnitude
+            
+            if distToTarget > 1 then 
+                local yDiff = targetHRP.Position.Y - currentHRP.Position.Y
+                local targetVel = targetHRP.AssemblyLinearVelocity
+                local ySpeed = math.abs(yDiff) > 0.5 and math.clamp(yDiff * 8, -100, 100) or targetVel.Y
+                local finalDir = (targetHRP.Position - currentHRP.Position).Unit
+                currentHRP.AssemblyLinearVelocity = Vector3.new(finalDir.X * AIMBOT_SPEED, ySpeed, finalDir.Z * AIMBOT_SPEED)
             else 
-                currentHRP.AssemblyLinearVelocity = targetVelocity 
+                currentHRP.AssemblyLinearVelocity = targetHRP.AssemblyLinearVelocity 
             end
-            if distToStandPos <= BAT_ENGAGE_RANGE then
-                if bat and bat.Parent == player.Character then 
-                    pcall(function() bat:Activate() end) 
+            
+            if distToTarget <= 1.5 then
+                local tool = nil
+                for _, t in ipairs(player.Character:GetChildren()) do 
+                    if t:IsA("Tool") and (t.Name:lower():find("bat") or t.Name:lower():find("slap")) then 
+                        tool = t
+                        break
+                    end 
+                end
+                
+                if tool then 
+                    pcall(function() tool:Activate() end)
+                else
+                    pcall(function()
+                        local hum = player.Character:FindFirstChildOfClass("Humanoid")
+                        if hum then
+                            hum:ChangeState(Enum.HumanoidStateType.Running)
+                        end
+                    end)
                 end
             end
         else
             lockedTarget = nil 
-            currentHRP.AssemblyLinearVelocity = Vector3.new(0,0,0) 
+            currentHRP.AssemblyLinearVelocity = Vector3.new(0, currentHRP.AssemblyLinearVelocity.Y, 0) 
             aimbotHighlight.Adornee = nil
         end
     end)
@@ -852,19 +877,19 @@ local function stopBatAimbot()
         aimbotConnection = nil 
     end
     local c = player.Character 
-    local h = c and c:FindFirstChild("HumanoidRootPart") 
-    local hum = c and c:FindFirstChildOfClass("Humanoid")
-    if h then
-        local att = h:FindFirstChild("AimbotAttachment") 
-        if att then att:Destroy() end
-        local al = h:FindFirstChild("AimbotAlign") 
-        if al then al:Destroy() end
-        h.AssemblyLinearVelocity = Vector3.new(0,0,0)
+    if c then
+        local hrp = c:FindFirstChild("HumanoidRootPart")
+        if hrp then
+            hrp.AssemblyLinearVelocity = Vector3.new(0, hrp.AssemblyLinearVelocity.Y, 0)
+        end
     end
-    if hum then hum.AutoRotate = true end
     lockedTarget = nil 
     aimbotHighlight.Adornee = nil
 end
+
+-- ============================================================
+-- WALANG CHARACTER RESET DETECTION
+-- ============================================================
 
 -- ============================================================
 -- AUTO STEAL FUNCTIONS
@@ -1110,8 +1135,8 @@ ScreenGui.Parent          = player:WaitForChild("PlayerGui")
 -- ============================================================
 MainFrame = Instance.new("Frame")
 MainFrame.Name             = "MainFrame"
-MainFrame.Size             = UDim2.new(0, 240, 0, 500)
-MainFrame.Position         = UDim2.new(0.5, -120, 0.5, -250)
+MainFrame.Size             = UDim2.new(0, 220, 0, 450)
+MainFrame.Position         = UDim2.new(0.5, -120, 0.5, -275)
 MainFrame.BackgroundColor3 = BG
 MainFrame.BorderSizePixel  = 0
 MainFrame.Active           = true
@@ -1178,7 +1203,7 @@ TitleLbl.TextXAlignment         = Enum.TextXAlignment.Left
 
 do
     local guiScale = 1.0
-    local BASE_W, BASE_H = 240, 500
+    local BASE_W, BASE_H = 240, 550
     local function makeScaleBtn(label, xOff)
         local b = Instance.new("TextButton", TitleBar)
         b.Size             = UDim2.new(0, 26, 0, 26)
@@ -1390,6 +1415,21 @@ makeToggle("Medusa Counter", 5, function(v)
         stopMedusaCounter()
     end
 end)
+makeToggle("DESYNC", 6, function(v)
+    desyncEnabled = v
+    applyDesync(v)
+    saveConfig()
+    if mobBtnRefs["DESYNC"] then
+        local btn = mobBtnRefs["DESYNC"]
+        if v then
+            btn.BackgroundColor3 = Color3.fromRGB(0, 50, 100)
+            btn.TextColor3       = WHITE
+        else
+            btn.BackgroundColor3 = Color3.fromRGB(8, 8, 16)
+            btn.TextColor3       = ACCENT
+        end
+    end
+end)
 
 makeSection("MOVEMENT", 10)
 makeToggle("Auto Play Left", 11, function(v)
@@ -1507,6 +1547,8 @@ do
             speedCustMode    = "NORMAL"
             speedCustEnabled = true
             medusaCounterEnabled = false
+            desyncEnabled = false
+            applyDesync(false)
             stopMedusaCounter()
             for name, t in pairs(toggleStates) do
                 if t.state then
@@ -1533,6 +1575,7 @@ do
             Keybinds.SlowDown    = Enum.KeyCode.F7
             Keybinds.Drop        = Enum.KeyCode.F3
             Keybinds.TPDown      = Enum.KeyCode.G
+            Keybinds.Desync      = Enum.KeyCode.R
             for kName, kBtn in pairs(KeybindButtons) do
                 kBtn.Text = Keybinds[kName] and tostring(Keybinds[kName]):gsub("Enum.KeyCode.","") or "NONE"
             end
@@ -1563,7 +1606,7 @@ Instance.new("UICorner", hint).CornerRadius = UDim.new(0, 10)
 local bindList = {
     {"Auto Left","AutoLeft"}, {"Auto Right","AutoRight"}, {"Auto Steal","AutoSteal"},
     {"Bat Aimbot","BatAimbot"}, {"Anti Ragdoll","AntiRagdoll"}, {"Unwalk","Unwalk"},
-    {"Slow Down","SlowDown"}, {"Drop","Drop"}, {"TP Down","TPDown"},
+    {"Slow Down","SlowDown"}, {"Drop","Drop"}, {"TP Down","TPDown"}, {"Desync","Desync"},
 }
 for idx, entry in ipairs(bindList) do
     local displayName, keyName = entry[1], entry[2]
@@ -1906,9 +1949,11 @@ do
     refreshTabs()
 end
 
--- Mobile Buttons
-local MOB_W = 76
-local MOB_H = 32
+-- ============================================================
+-- MOBILE BUTTONS 
+-- ============================================================
+local MOB_W = 83   
+local MOB_H = 35   
 
 local function makeMob(label, pos, toggleName, onAct)
     local btn = Instance.new("TextButton", ScreenGui)
@@ -1919,11 +1964,11 @@ local function makeMob(label, pos, toggleName, onAct)
     btn.Text                   = label
     btn.TextColor3             = ACCENT
     btn.Font                   = Enum.Font.GothamBold
-    btn.TextSize               = 10
+    btn.TextSize               = 11               
     btn.TextWrapped            = false
     btn.BorderSizePixel        = 0
     btn.ZIndex                 = 20
-    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 10)
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 12) 
     local s = Instance.new("UIStroke", btn)
     s.Color       = ACCENT
     s.Thickness   = 1.5
@@ -1931,12 +1976,15 @@ local function makeMob(label, pos, toggleName, onAct)
     s.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
     table.insert(mobileButtons, btn)
     if toggleName then mobBtnRefs[toggleName] = btn end
+    
     local dragging2, dragStart2, startPos2
     btn.InputBegan:Connect(function(input)
         if uiLocked then return end
         if input.UserInputType == Enum.UserInputType.MouseButton1
         or input.UserInputType == Enum.UserInputType.Touch then
-            dragging2 = true dragStart2 = input.Position startPos2 = btn.Position
+            dragging2 = true 
+            dragStart2 = input.Position 
+            startPos2 = btn.Position
         end
     end)
     UserInputService.InputChanged:Connect(function(input)
@@ -1950,14 +1998,19 @@ local function makeMob(label, pos, toggleName, onAct)
     end)
     UserInputService.InputEnded:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1
-        or input.UserInputType == Enum.UserInputType.Touch then dragging2 = false end
+        or input.UserInputType == Enum.UserInputType.Touch then 
+            dragging2 = false 
+        end
     end)
+    
     btn.MouseButton1Click:Connect(onAct)
     return btn
 end
 
-makeMob("Drop",       UDim2.new(1, -(MOB_W+8), 0.42, 0), nil,               function() task.spawn(doDrop) end)
-makeMob("Auto Left",  UDim2.new(1, -(MOB_W+8), 0.49, 0), "Auto Play Left",  function()
+-- CREATE 7 MOBILE BUTTONS (NAKAPOSITION SA KANAN)
+-- TANDAAN: GINAMIT ANG MOB_W+8 BILANG OFFSET DAHIL 90 NA ANG WIDTH NG BUTTON
+makeMob("DROP",       UDim2.new(1, -(MOB_W+8), 0.36, 0), nil,               function() task.spawn(doDrop) end)
+makeMob("AUTO LEFT",  UDim2.new(1, -(MOB_W+8), 0.42, 0), "Auto Play Left",  function()
     local ns = not aplOn
     if ns then
         if batAimbotEnabled then stopBatAimbot() updateToggle("Bat Aimbot",false) end
@@ -1966,16 +2019,7 @@ makeMob("Auto Left",  UDim2.new(1, -(MOB_W+8), 0.49, 0), "Auto Play Left",  func
     else stopAutoPlayLeft() end
     updateToggle("Auto Play Left", ns)
 end)
-makeMob("Auto Bat",   UDim2.new(1, -(MOB_W+8), 0.56, 0), "Bat Aimbot",      function()
-    local ns = not(toggleStates["Bat Aimbot"] and toggleStates["Bat Aimbot"].state)
-    if ns then
-        if aplOn then stopAutoPlayLeft() end
-        if aprOn then stopAutoPlayRight() end
-        startBatAimbot()
-    else stopBatAimbot() end
-    updateToggle("Bat Aimbot", ns)
-end)
-makeMob("Auto Right", UDim2.new(1, -(MOB_W+8), 0.63, 0), "Auto Play Right", function()
+makeMob("AUTO RIGHT", UDim2.new(1, -(MOB_W+8), 0.48, 0), "Auto Play Right", function()
     local ns = not aprOn
     if ns then
         if batAimbotEnabled then stopBatAimbot() updateToggle("Bat Aimbot",false) end
@@ -1984,12 +2028,39 @@ makeMob("Auto Right", UDim2.new(1, -(MOB_W+8), 0.63, 0), "Auto Play Right", func
     else stopAutoPlayRight() end
     updateToggle("Auto Play Right", ns)
 end)
-makeMob("Slow Down",  UDim2.new(1, -(MOB_W+8), 0.70, 0), "Slow Down",       function()
-    local ns = not(toggleStates["Slow Down"] and toggleStates["Slow Down"].state)
-    slowDownEnabled = ns updateToggle("Slow Down", ns)
+makeMob("AUTO BAT",   UDim2.new(1, -(MOB_W+8), 0.54, 0), "Bat Aimbot",      function()
+    local ns = not(toggleStates["Bat Aimbot"] and toggleStates["Bat Aimbot"].state)
+    if ns then
+        if aplOn then stopAutoPlayLeft() end
+        if aprOn then stopAutoPlayRight() end
+        startBatAimbot()
+    else stopBatAimbot() end
+    updateToggle("Bat Aimbot", ns)
 end)
-makeMob("TP Down",    UDim2.new(1, -(MOB_W+8), 0.77, 0), nil,               function() task.spawn(doTPDown) end)
+makeMob("SLOW DOWN",  UDim2.new(1, -(MOB_W+8), 0.60, 0), "Slow Down",       function()
+    local ns = not(toggleStates["Slow Down"] and toggleStates["Slow Down"].state)
+    slowDownEnabled = ns 
+    updateToggle("Slow Down", ns)
+end)
+makeMob("TP DOWN",    UDim2.new(1, -(MOB_W+8), 0.66, 0), nil,               function() task.spawn(doTPDown) end)
+makeMob("DESYNC",     UDim2.new(1, -(MOB_W+8), 0.72, 0), "Desync",          function()
+    desyncEnabled = not desyncEnabled
+    applyDesync(desyncEnabled)
+    updateToggle("Desync", desyncEnabled)
+    if mobBtnRefs["DESYNC"] then
+        local btn = mobBtnRefs["DESYNC"]
+        if desyncEnabled then
+            btn.BackgroundColor3 = Color3.fromRGB(0, 50, 100)
+            btn.TextColor3       = WHITE
+        else
+            btn.BackgroundColor3 = Color3.fromRGB(8, 8, 16)
+            btn.TextColor3       = ACCENT
+        end
+    end
+    saveConfig()
+end)
 
+-- Load saved UI positions
 task.defer(function()
     pcall(function()
         if not (readfile and isfile and isfile(CONFIG_KEY .. ".json")) then return end
@@ -2017,7 +2088,7 @@ task.defer(function()
     end)
 end)
 
--- Open/Close Button (Cyber Circle)
+-- Open/Close Button
 do
     openButton = Instance.new("TextButton", ScreenGui)
     openButton.Size             = UDim2.new(0, 48, 0, 48)
@@ -2047,7 +2118,9 @@ do
         openButton.InputBegan:Connect(function(input)
             if input.UserInputType == Enum.UserInputType.MouseButton1
             or input.UserInputType == Enum.UserInputType.Touch then
-                dragging3 = true dragStart3 = input.Position startPos3 = openButton.Position
+                dragging3 = true 
+                dragStart3 = input.Position 
+                startPos3 = openButton.Position
             end
         end)
         UserInputService.InputChanged:Connect(function(input)
@@ -2060,7 +2133,9 @@ do
         end)
         UserInputService.InputEnded:Connect(function(input)
             if input.UserInputType == Enum.UserInputType.MouseButton1
-            or input.UserInputType == Enum.UserInputType.Touch then dragging3 = false end
+            or input.UserInputType == Enum.UserInputType.Touch then 
+                dragging3 = false 
+            end
         end)
     end
 
@@ -2077,7 +2152,8 @@ end
 
 -- KEYBIND HANDLER
 UserInputService.InputBegan:Connect(function(input, processed)
-    if processed then return end if changingKeybind then return end
+    if processed then return end 
+    if changingKeybind then return end
     if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
 
     if Keybinds.AutoLeft and input.KeyCode == Keybinds.AutoLeft then
@@ -2098,7 +2174,8 @@ UserInputService.InputBegan:Connect(function(input, processed)
         updateToggle("Auto Play Right", ns)
     elseif Keybinds.AutoSteal and input.KeyCode == Keybinds.AutoSteal then
         local ns = not(toggleStates["Auto Steal"] and toggleStates["Auto Steal"].state)
-        autoStealEnabled = ns if ns then startAutoSteal() else stopAutoSteal() end
+        autoStealEnabled = ns 
+        if ns then startAutoSteal() else stopAutoSteal() end
         updateToggle("Auto Steal", ns)
     elseif Keybinds.BatAimbot and input.KeyCode == Keybinds.BatAimbot then
         local ns = not(toggleStates["Bat Aimbot"] and toggleStates["Bat Aimbot"].state)
@@ -2112,19 +2189,37 @@ UserInputService.InputBegan:Connect(function(input, processed)
         updateToggle("Bat Aimbot", ns)
     elseif Keybinds.AntiRagdoll and input.KeyCode == Keybinds.AntiRagdoll then
         local ns = not(toggleStates["Anti Ragdoll"] and toggleStates["Anti Ragdoll"].state)
-        antiRagdollEnabled = ns if ns then startAntiRagdoll() else stopAntiRagdoll() end
+        antiRagdollEnabled = ns 
+        if ns then startAntiRagdoll() else stopAntiRagdoll() end
         updateToggle("Anti Ragdoll", ns)
     elseif Keybinds.Unwalk and input.KeyCode == Keybinds.Unwalk then
         local ns = not(toggleStates["Unwalk"] and toggleStates["Unwalk"].state)
-        unwalkEnabled = ns if ns then startUnwalk() else stopUnwalk() end
+        unwalkEnabled = ns 
+        if ns then startUnwalk() else stopUnwalk() end
         updateToggle("Unwalk", ns)
     elseif Keybinds.SlowDown and input.KeyCode == Keybinds.SlowDown then
         local ns = not(toggleStates["Slow Down"] and toggleStates["Slow Down"].state)
-        slowDownEnabled = ns updateToggle("Slow Down", ns)
+        slowDownEnabled = ns 
+        updateToggle("Slow Down", ns)
     elseif Keybinds.Drop and input.KeyCode == Keybinds.Drop then
         task.spawn(doDrop)
     elseif Keybinds.TPDown and input.KeyCode == Keybinds.TPDown then
         task.spawn(doTPDown)
+    elseif Keybinds.Desync and input.KeyCode == Keybinds.Desync then
+        desyncEnabled = not desyncEnabled
+        applyDesync(desyncEnabled)
+        updateToggle("Desync", desyncEnabled)
+        if mobBtnRefs["DESYNC"] then
+            local btn = mobBtnRefs["DESYNC"]
+            if desyncEnabled then
+                btn.BackgroundColor3 = Color3.fromRGB(0, 50, 100)
+                btn.TextColor3       = WHITE
+            else
+                btn.BackgroundColor3 = Color3.fromRGB(8, 8, 16)
+                btn.TextColor3       = ACCENT
+            end
+        end
+        saveConfig()
     end
 end)
 
