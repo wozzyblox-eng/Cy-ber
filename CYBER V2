@@ -531,83 +531,66 @@ RunService.RenderStepped:Connect(function()
     lbl.Text  = "Speed: " .. math.floor(Vector3.new(v.X,0,v.Z).Magnitude)
 end)
 
+-- ============================================================
+-- ANTI RAGDOLL FUNCTIONS (REPLACED WITH SIMPLER VERSION)
+-- ============================================================
 local function startAntiRagdoll()
     if #AntiRagdollConns > 0 then return end
-    local c        = player.Character or player.CharacterAdded:Wait()
-    local humanoid = c:WaitForChild("Humanoid")
-    local root     = c:WaitForChild("HumanoidRootPart")
-    local animator = humanoid:WaitForChild("Animator")
-    local maxVelocity   = 40
-    local clampVelocity = 25
-    local maxClamp      = 15
-    local lastVelocity  = Vector3.new(0,0,0)
-    local function IsRagdollState()
-        local s = humanoid:GetState()
-        return s == Enum.HumanoidStateType.Physics
-            or s == Enum.HumanoidStateType.Ragdoll
-            or s == Enum.HumanoidStateType.FallingDown
-            or s == Enum.HumanoidStateType.GettingUp
-    end
-    local function CleanRagdollEffects()
-        for _, obj in pairs(c:GetDescendants()) do
-            if obj:IsA("BallSocketConstraint") or obj:IsA("NoCollisionConstraint")
-                or obj:IsA("HingeConstraint")
-                or (obj:IsA("Attachment") and (obj.Name=="A" or obj.Name=="B")) then
-                obj:Destroy()
-            elseif obj:IsA("BodyVelocity") or obj:IsA("BodyPosition") or obj:IsA("BodyGyro") then
-                obj:Destroy()
-            elseif obj:IsA("Motor6D") then
+    
+    local connection = RunService.Heartbeat:Connect(function()
+        if not antiRagdollEnabled then return end
+        
+        local char = player.Character
+        if not char then return end
+        
+        local root = char:FindFirstChild("HumanoidRootPart")
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        
+        if hum then
+            local state = hum:GetState()
+            -- Check if character is in ragdoll/physics state
+            if state == Enum.HumanoidStateType.Physics or 
+               state == Enum.HumanoidStateType.Ragdoll or 
+               state == Enum.HumanoidStateType.FallingDown then
+                
+                -- Force back to running state
+                hum:ChangeState(Enum.HumanoidStateType.Running)
+                
+                -- Reset camera to follow character
+                workspace.CurrentCamera.CameraSubject = hum
+                
+                -- Re-enable player controls
+                pcall(function()
+                    local pm = player.PlayerScripts:FindFirstChild("PlayerModule")
+                    if pm then
+                        local cm = pm:FindFirstChild("ControlModule")
+                        if cm then require(cm):Enable() end
+                    end
+                end)
+                
+                -- Stop all velocity
+                if root then
+                    root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+                    root.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+                end
+            end
+        end
+        
+        -- Fix any broken Motor6D joints
+        for _, obj in ipairs(char:GetDescendants()) do
+            if obj:IsA("Motor6D") and not obj.Enabled then
                 obj.Enabled = true
             end
         end
-        for _, track in pairs(animator:GetPlayingAnimationTracks()) do
-            local animName = track.Animation and track.Animation.Name:lower() or ""
-            if animName:find("rag") or animName:find("fall") or animName:find("hurt") or animName:find("down") then
-                track:Stop(0)
-            end
-        end
-    end
-    local function ReEnableControls()
-        pcall(function()
-            require(player:WaitForChild("PlayerScripts"):WaitForChild("PlayerModule")):GetControls():Enable()
-        end)
-    end
-    table.insert(AntiRagdollConns, humanoid.StateChanged:Connect(function()
-        if IsRagdollState() then
-            humanoid:ChangeState(Enum.HumanoidStateType.Running)
-            CleanRagdollEffects()
-            workspace.CurrentCamera.CameraSubject = humanoid
-            ReEnableControls()
-        end
-    end))
-    table.insert(AntiRagdollConns, RunService.Heartbeat:Connect(function()
-        if not antiRagdollEnabled then return end
-        if IsRagdollState() then
-            CleanRagdollEffects()
-            local vel = root.AssemblyLinearVelocity
-            if (vel - lastVelocity).Magnitude > maxVelocity and vel.Magnitude > clampVelocity then
-                root.AssemblyLinearVelocity = vel.Unit * math.min(vel.Magnitude, maxClamp)
-            end
-            lastVelocity = vel
-        end
-    end))
-    table.insert(AntiRagdollConns, c.DescendantAdded:Connect(function()
-        if IsRagdollState() then CleanRagdollEffects() end
-    end))
-    table.insert(AntiRagdollConns, player.CharacterAdded:Connect(function(newChar)
-        c        = newChar
-        humanoid = newChar:WaitForChild("Humanoid")
-        root     = newChar:WaitForChild("HumanoidRootPart")
-        animator = humanoid:WaitForChild("Animator")
-        lastVelocity = Vector3.new(0,0,0)
-        ReEnableControls()
-        CleanRagdollEffects()
-    end))
-    ReEnableControls()
-    CleanRagdollEffects()
+    end)
+    
+    table.insert(AntiRagdollConns, connection)
 end
+
 local function stopAntiRagdoll()
-    for _, conn in pairs(AntiRagdollConns) do conn:Disconnect() end
+    for _, conn in pairs(AntiRagdollConns) do
+        pcall(function() conn:Disconnect() end)
+    end
     AntiRagdollConns = {}
 end
 
@@ -1692,7 +1675,7 @@ do
         if input == dragInput and dragging then
             local delta = input.Position - dragStart
             PBC.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X,
-                                     startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+                                    startPos.Y.Scale, startPos.Y.Offset + delta.Y)
         end
     end)
 end
@@ -1993,7 +1976,7 @@ local function makeMob(label, pos, toggleName, onAct)
         or input.UserInputType == Enum.UserInputType.Touch) then
             local delta = input.Position - dragStart2
             btn.Position = UDim2.new(startPos2.X.Scale, startPos2.X.Offset + delta.X,
-                                     startPos2.Y.Scale, startPos2.Y.Offset + delta.Y)
+                                    startPos2.Y.Scale, startPos2.Y.Offset + delta.Y)
         end
     end)
     UserInputService.InputEnded:Connect(function(input)
@@ -2008,7 +1991,6 @@ local function makeMob(label, pos, toggleName, onAct)
 end
 
 -- CREATE 7 MOBILE BUTTONS (NAKAPOSITION SA KANAN)
--- TANDAAN: GINAMIT ANG MOB_W+8 BILANG OFFSET DAHIL 90 NA ANG WIDTH NG BUTTON
 makeMob("DROP",       UDim2.new(1, -(MOB_W+8), 0.36, 0), nil,               function() task.spawn(doDrop) end)
 makeMob("AUTO LEFT",  UDim2.new(1, -(MOB_W+8), 0.42, 0), "Auto Play Left",  function()
     local ns = not aplOn
@@ -2092,7 +2074,7 @@ end)
 do
     openButton = Instance.new("TextButton", ScreenGui)
     openButton.Size             = UDim2.new(0, 48, 0, 48)
-    openButton.Position         = UDim2.new(0, 10, 0.5, -24)
+    openButton.Position         = UDim2.new(0.65, -24, 1, -150)
     openButton.BackgroundColor3 = Color3.fromRGB(10, 10, 15)
     openButton.Text             = "CYBER"
     openButton.TextSize         = 10
@@ -2128,7 +2110,7 @@ do
             or input.UserInputType == Enum.UserInputType.Touch) then
                 local delta = input.Position - dragStart3
                 openButton.Position = UDim2.new(startPos3.X.Scale, startPos3.X.Offset + delta.X,
-                                          startPos3.Y.Scale, startPos3.Y.Offset + delta.Y)
+                                        startPos3.Y.Scale, startPos3.Y.Offset + delta.Y)
             end
         end)
         UserInputService.InputEnded:Connect(function(input)
